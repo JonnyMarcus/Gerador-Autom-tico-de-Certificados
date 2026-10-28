@@ -5,11 +5,15 @@ from __future__ import annotations
 from io import BytesIO
 from hashlib import sha256
 from pathlib import Path
+import sys
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import streamlit as st
 import streamlit.components.v1 as components
+
+# O Streamlit Cloud executa app.py na raiz; o pacote da aplicação fica em src/.
+sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from gerador_certificados.planilha import ler_participantes
 from gerador_certificados.pdf_certificado import gerar_certificados_pdf
