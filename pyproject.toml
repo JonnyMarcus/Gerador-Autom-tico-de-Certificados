@@ -1,0 +1,20 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gerador-de-certificados"
+version = "0.1.0"
+description = "Geração de certificados em PowerPoint a partir de uma planilha Excel."
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = ["openpyxl>=3.1", "python-pptx>=0.6.23", "streamlit>=1.38"]
+
+[project.scripts]
+gerar-certificados = "gerador_certificados.cli:main"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
