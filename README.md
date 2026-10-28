@@ -1,6 +1,6 @@
 ﻿# Gerador automático de certificados
 
-Aplicação com interface web e linha de comando que lê participantes de uma planilha Excel e cria um arquivo PowerPoint individual para cada pessoa, usando um modelo editável.
+Aplicação com interface web e linha de comando para gerar certificados personalizados a partir de uma planilha Excel.
 
 ## Estrutura
 
@@ -15,13 +15,14 @@ src/gerador_certificados/
   planilha.py                   Leitura do Excel
   validacao.py                  Validação dos dados de entrada
   certificado.py                Substituição dos marcadores no PowerPoint
+  pdf_certificado.py            Aplicação dos nomes sobre o PDF
   exportador.py                 Criação e nomeação dos arquivos
   logging_config.py             Configuração de logs
 ```
 
 ## Aplicação web
 
-A interface permite enviar a planilha e o modelo, conferir uma amostra dos participantes e baixar os certificados em um arquivo ZIP. Os arquivos enviados são processados em diretório temporário durante a sessão.
+A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes e baixar os certificados personalizados em um arquivo ZIP. A coluna dos nomes é fixa e deve se chamar `nome`. O nome é aplicado ao centro da primeira página do PDF; deixe essa área livre no modelo. A tela usa uma animação de entrada GSAP, respeitando a configuração de movimento reduzido do dispositivo. Os arquivos enviados são processados em diretório temporário durante a sessão.
 
 Para executar localmente:
 
@@ -38,9 +39,10 @@ O app processa os arquivos no servidor e usa diretórios temporários. Ele não 
 
 - Python 3.10 ou superior
 - Um arquivo `.xlsx` com cabeçalho na primeira linha e uma coluna `nome`
-- Um modelo `.pptx` com marcadores entre chaves, como `{nome}`, `{curso}` e `{carga_horaria}`
+- Para a interface web: um modelo `.pdf` com espaço livre ao centro e uma planilha com a coluna `nome`
+- Para a CLI: um modelo `.pptx` com marcadores entre chaves, como `{nome}`, `{curso}` e `{carga_horaria}`
 
-Os nomes dos marcadores devem corresponder aos cabeçalhos da planilha, sem distinção entre maiúsculas e minúsculas. Para preservar a formatação, deixe cada marcador como texto contínuo no mesmo parágrafo do PowerPoint.
+Na CLI, os nomes dos marcadores devem corresponder aos cabeçalhos da planilha, sem distinção entre maiúsculas e minúsculas. Para preservar a formatação, deixe cada marcador como texto contínuo no mesmo parágrafo do PowerPoint.
 
 ## Instalação
 
@@ -72,7 +74,7 @@ Ajuda do comando:
 gerar-certificados --help
 ```
 
-Os certificados são gerados em `.pptx`. Na interface web, são entregues em um `.zip`. A conversão para PDF não está incluída nesta versão.
+Na interface web, cada certificado é gerado em `.pdf` e entregue em um `.zip`. A CLI continua gerando arquivos `.pptx` a partir de modelos PowerPoint.
 
 ## Exemplo de planilha
 
