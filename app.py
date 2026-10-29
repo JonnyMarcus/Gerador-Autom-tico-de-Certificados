@@ -10,7 +10,6 @@ import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import streamlit as st
-import streamlit.components.v1 as components
 
 # O Streamlit Cloud executa app.py na raiz; o pacote da aplicação fica em src/.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
@@ -58,7 +57,7 @@ st.markdown(
 animar_entrada = not st.session_state.get("entrada_animada", False)
 st.session_state["entrada_animada"] = True
 
-components.html(
+st.iframe(
     """
     <!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
@@ -101,8 +100,9 @@ components.html(
       }
     </script></body></html>
     """.replace("__PLAY_INTRO__", str(animar_entrada).lower()),
+    width="stretch",
     height=350,
-    scrolling=False,
+    alt="Apresentação animada do gerador de certificados",
 )
 
 with st.expander("Antes de começar · confira o formato dos arquivos", expanded=False):

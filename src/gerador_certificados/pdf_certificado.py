@@ -1,4 +1,3 @@
-from copy import deepcopy
 from io import BytesIO
 from pathlib import Path
 
@@ -35,24 +34,22 @@ def gerar_certificados_pdf(
     if not modelo.is_file():
         raise FileNotFoundError(f"Modelo PDF não encontrado: {modelo}")
     saida.mkdir(parents=True, exist_ok=True)
+    leitor = PdfReader(modelo)
+    if not leitor.pages:
+        raise ValueError("O PDF do certificado não contém páginas.")
     destinos = []
 
     for indice, participante in enumerate(participantes, start=1):
         nome = participante[coluna_nome.lower()].strip()
-        leitor = PdfReader(modelo)
-        if not leitor.pages:
-            raise ValueError("O PDF do certificado não contém páginas.")
-
-        primeira_pagina = deepcopy(leitor.pages[0])
+        escritor = PdfWriter()
+        primeira_pagina = escritor.add_page(leitor.pages[0])
         largura = float(primeira_pagina.mediabox.width)
         altura = float(primeira_pagina.mediabox.height)
         camada_nome = _sobreposicao_nome(nome, largura, altura)
         primeira_pagina.merge_page(camada_nome.pages[0])
 
-        escritor = PdfWriter()
-        escritor.add_page(primeira_pagina)
         for pagina in leitor.pages[1:]:
-            escritor.add_page(deepcopy(pagina))
+            escritor.add_page(pagina)
 
         destino = saida / f"{indice:03d}_{nome_seguro(nome)}.pdf"
         with destino.open("wb") as arquivo:

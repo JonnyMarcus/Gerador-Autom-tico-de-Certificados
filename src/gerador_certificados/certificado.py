@@ -5,22 +5,31 @@ from pptx.shapes.group import GroupShape
 
 TOKEN = re.compile(r"\{([A-Za-zÀ-ÿ0-9_ -]+)\}")
 
+def _replace_in_paragraph(paragraph, replacements: dict[str, str]) -> None:
+    original = "".join(run.text for run in paragraph.runs)
+    if not original:
+        return
+    updated = TOKEN.sub(lambda match: replacements.get(match.group(1).strip().lower(), match.group(0)), original)
+    if updated != original and paragraph.runs:
+        paragraph.runs[0].text = updated
+        for run in paragraph.runs[1:]:
+            run.text = ""
+
 def _replace_in_shape(shape, replacements: dict[str, str]) -> None:
     if isinstance(shape, GroupShape):
         for child in shape.shapes:
             _replace_in_shape(child, replacements)
         return
+    if shape.has_table:
+        for row in shape.table.rows:
+            for cell in row.cells:
+                for paragraph in cell.text_frame.paragraphs:
+                    _replace_in_paragraph(paragraph, replacements)
+        return
     if not shape.has_text_frame:
         return
     for paragraph in shape.text_frame.paragraphs:
-        original = "".join(run.text for run in paragraph.runs)
-        if not original:
-            continue
-        updated = TOKEN.sub(lambda match: replacements.get(match.group(1).strip().lower(), match.group(0)), original)
-        if updated != original and paragraph.runs:
-            paragraph.runs[0].text = updated
-            for run in paragraph.runs[1:]:
-                run.text = ""
+        _replace_in_paragraph(paragraph, replacements)
 
 def preencher_modelo(modelo: Path, destino: Path, dados: dict[str, str]) -> None:
     """Preenche tokens {coluna} em todos os slides e salva uma cópia do modelo."""

@@ -27,7 +27,7 @@ A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, co
 Para executar localmente:
 
 ```bash
-python -m pip install -e .
+python -m pip install -e ".[web]"
 streamlit run app.py
 ```
 
@@ -86,13 +86,19 @@ Na interface web, cada certificado é gerado em `.pdf` e entregue em um `.zip`. 
 ## Fluxo da aplicação
 
 ```text
-Interface web ou CLI → leitura da planilha → validação → preenchimento do modelo → exportação dos PPTX
+Web: planilha XLSX + certificado PDF → validação → nome na 1ª página → ZIP de PDFs
+CLI: planilha XLSX + modelo PPTX → validação → preenchimento de marcadores → PPTX individuais
 ```
 
 ## Próximas etapas
 
-1. Criar um modelo PowerPoint com o layout final e os marcadores.
-2. Preencher a planilha Excel com os participantes reais.
-3. Definir a exportação em PDF, caso necessária (por exemplo, via LibreOffice).
-4. Adicionar testes automatizados para planilha, validação e substituição dos marcadores.
-5. Se necessário, incluir exportação em PDF e um limite configurável para a quantidade de participantes.
+1. Permitir escolher a posição, fonte e cor do nome sobre o PDF.
+2. Adicionar limites de tamanho dos arquivos e quantidade de participantes para proteger os recursos da hospedagem gratuita.
+3. Criar arquivos de exemplo válidos; os arquivos de modelo atualmente no repositório estão vazios.
+
+## Testes
+
+```bash
+python -m pip install -e ".[web]"
+python -m unittest discover -s tests -v
+```

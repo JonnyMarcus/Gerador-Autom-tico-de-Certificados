@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Geração de certificados personalizados a partir de PDF e planilha Excel."
 readme = "README.md"
 requires-python = ">=3.10"
-dependencies = ["openpyxl>=3.1", "python-pptx>=0.6.23", "pypdf>=5.0", "reportlab>=4.2", "streamlit>=1.38"]
+dependencies = ["openpyxl>=3.1", "python-pptx>=0.6.23"]
+
+[project.optional-dependencies]
+web = ["pypdf>=5.0", "reportlab>=4.2", "streamlit>=1.56"]
 
 [project.scripts]
 gerar-certificados = "gerador_certificados.cli:main"
