@@ -9,7 +9,20 @@ from reportlab.pdfgen import canvas
 
 from .exportador import nome_seguro
 
-FONTES_PDF = ("Helvetica", "Helvetica-Bold", "Times-Roman", "Times-Bold", "Courier")
+FONTES_PDF = (
+    "Helvetica",
+    "Helvetica-Bold",
+    "Helvetica-Oblique",
+    "Helvetica-BoldOblique",
+    "Times-Roman",
+    "Times-Bold",
+    "Times-Italic",
+    "Times-BoldItalic",
+    "Courier",
+    "Courier-Bold",
+    "Courier-Oblique",
+    "Courier-BoldOblique",
+)
 
 
 def _sobreposicao_nome(

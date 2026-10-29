@@ -22,7 +22,7 @@ src/gerador_certificados/
 
 ## Aplicação web
 
-A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes, visualizar uma prévia personalizada e baixar os certificados em arquivos separados ou em um PDF único. A coluna dos nomes é fixa e deve se chamar `nome`. Há estilos prontos (moderno, clássico e institucional), além de ajustes manuais para posição, fonte, tamanho e cor; a prévia acompanha essas mudanças. A tela usa uma animação de entrada GSAP, respeitando a configuração de movimento reduzido do dispositivo. Os arquivos enviados são processados em diretório temporário durante a sessão.
+A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes, visualizar uma prévia personalizada e baixar os certificados em arquivos separados ou em um PDF único. A coluna dos nomes é fixa e deve se chamar `nome`. Há estilos prontos (moderno, clássico e institucional), além de ajustes manuais para posição, tamanho e cor. A tipografia oferece famílias modernas (Helvetica), clássicas (Times) e monoespaçadas (Courier), cada uma com variações regular, negrito, itálico e negrito itálico; a prévia acompanha as mudanças. Essas fontes padrão são compatíveis com PDF e não exigem instalação. A tela usa uma animação de entrada GSAP, respeitando a configuração de movimento reduzido do dispositivo. Os arquivos enviados são processados em diretório temporário durante a sessão.
 
 A interface limita a planilha a 5 MB, o certificado a 10 MB, a geração a 500 participantes e o tamanho estimado da saída a 100 MB.
 

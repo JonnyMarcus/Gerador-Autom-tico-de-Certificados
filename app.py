@@ -30,11 +30,18 @@ MAX_PDF_MB = 10
 MAX_PARTICIPANTES = 500
 MAX_SAIDA_ESTIMADA_BYTES = 100 * 1024 * 1024
 FONTES_EXIBICAO = {
-    "Sem serifa · forte": "Helvetica-Bold",
-    "Sem serifa · leve": "Helvetica",
-    "Clássica · forte": "Times-Bold",
-    "Clássica · leve": "Times-Roman",
-    "Monoespaçada": "Courier",
+    "Moderna · regular": "Helvetica",
+    "Moderna · negrito": "Helvetica-Bold",
+    "Moderna · itálico": "Helvetica-Oblique",
+    "Moderna · negrito itálico": "Helvetica-BoldOblique",
+    "Clássica · regular": "Times-Roman",
+    "Clássica · negrito": "Times-Bold",
+    "Clássica · itálico": "Times-Italic",
+    "Clássica · negrito itálico": "Times-BoldItalic",
+    "Monoespaçada · regular": "Courier",
+    "Monoespaçada · negrito": "Courier-Bold",
+    "Monoespaçada · itálico": "Courier-Oblique",
+    "Monoespaçada · negrito itálico": "Courier-BoldOblique",
 }
 ESTILOS = {
     "Moderno": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 32, "cor": "#17233C"},
@@ -234,7 +241,7 @@ with st.expander("Personalize o nome", expanded=True):
             st.session_state["personalizacao_cor"] = preset["cor"]
         st.session_state["estilo_aplicado"] = estilo
 
-    st.session_state.setdefault("rotulo_fonte", "Sem serifa · forte")
+    st.session_state.setdefault("rotulo_fonte", "Moderna · negrito")
 
     esquerda, direita = st.columns(2)
     with esquerda:
@@ -255,13 +262,17 @@ with st.expander("Personalize o nome", expanded=True):
             on_change=marcar_personalizado,
         )
     with direita:
+        st.markdown("**Estilo tipográfico**")
         rotulo_fonte = st.selectbox(
             "Fonte",
             options=list(FONTES_EXIBICAO),
             key="rotulo_fonte",
+            format_func=lambda opcao: opcao,
             on_change=marcar_personalizado,
+            help="Escolha entre estilos modernos, clássicos e monoespaçados, com variações de peso e inclinação.",
         )
         fonte = FONTES_EXIBICAO[rotulo_fonte]
+        st.caption("As fontes são incorporadas como recursos padrão do PDF; não é preciso instalar nada.")
         tamanho_fonte = st.slider(
             "Tamanho da fonte",
             min_value=12,

@@ -129,6 +129,23 @@ class PdfTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "entre 0 e 100"):
                 gerar_certificados_pdf(modelo, pasta / "invalido", [{"nome": "Rita"}], posicao_x=101)
 
+    def test_aceita_todas_as_variacoes_tipograficas(self):
+        fontes = (
+            "Helvetica", "Helvetica-Bold", "Helvetica-Oblique", "Helvetica-BoldOblique",
+            "Times-Roman", "Times-Bold", "Times-Italic", "Times-BoldItalic",
+            "Courier", "Courier-Bold", "Courier-Oblique", "Courier-BoldOblique",
+        )
+        with TemporaryDirectory() as diretorio:
+            pasta = Path(diretorio)
+            modelo = pasta / "modelo.pdf"
+            self.criar_modelo(modelo)
+            for fonte in fontes:
+                with self.subTest(fonte=fonte):
+                    arquivo = gerar_certificados_pdf(
+                        modelo, pasta / fonte, [{"nome": "Rita Souza"}], fonte=fonte
+                    )[0]
+                    self.assertIn("Rita Souza", PdfReader(arquivo).pages[0].extract_text())
+
     def test_nao_combina_lista_vazia(self):
         with self.assertRaisesRegex(ValueError, "Não há certificados"):
             combinar_certificados_pdf([])
@@ -237,7 +254,7 @@ class WebAppTests(unittest.TestCase):
         app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
         app.radio[0].set_value("Clássico").run()
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(app.selectbox[0].value, "Clássica · forte")
+        self.assertEqual(app.selectbox[0].value, "Clássica · negrito")
         self.assertEqual(app.slider[2].value, 34)
 
         app.slider[0].set_value(42).run()
