@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="1030" viewBox="0 0 1440 1030" role="img" aria-labelledby="title desc">
+  <title id="title">Prévia ilustrativa do Certifica</title>
+  <desc id="desc">Interface do Certifica com cabeçalho, fluxo de três etapas, cartões de upload e painel de personalização com prévia do certificado.</desc>
+  <defs>
+    <linearGradient id="page" x2="0" y2="1"><stop stop-color="#f3f6fc"/><stop offset="1" stop-color="#fbfcff"/></linearGradient>
+    <linearGradient id="hero" x2="1" y2=".3"><stop stop-color="#17233c"/><stop offset=".58" stop-color="#2a3d70"/><stop offset="1" stop-color="#5148e5"/></linearGradient>
+    <linearGradient id="cert" x2="1" y2="1"><stop stop-color="#fff"/><stop offset="1" stop-color="#f3f5fd"/></linearGradient>
+    <filter id="shadow" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#17233c" flood-opacity=".08"/></filter>
+  </defs>
+  <rect width="1440" height="1030" fill="url(#page)"/>
+  <rect x="92" y="34" width="44" height="44" rx="14" fill="#5148e5"/>
+  <path d="M104 47h20v15h-20zM108 43h12v4h-12zM108 66h12" fill="none" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+  <text x="148" y="53" font-family="Inter,Arial,sans-serif" font-size="19" font-weight="800" fill="#17233c">CERTIFICA</text>
+  <text x="148" y="70" font-family="Inter,Arial,sans-serif" font-size="10" letter-spacing="1.3" fill="#718096">GERADOR DE CERTIFICADOS</text>
+  <rect x="92" y="105" width="1256" height="270" rx="28" fill="url(#hero)"/>
+  <circle cx="1196" cy="153" r="190" fill="none" stroke="#fff" stroke-opacity=".1"/>
+  <circle cx="1196" cy="153" r="145" fill="none" stroke="#fff" stroke-opacity=".1"/>
+  <rect x="131" y="137" width="223" height="28" rx="14" fill="#fff" fill-opacity=".12" stroke="#fff" stroke-opacity=".18"/>
+  <circle cx="148" cy="151" r="4" fill="#50e0c2"/>
+  <text x="161" y="155" font-family="Inter,Arial,sans-serif" font-size="10" font-weight="700" letter-spacing="1" fill="#e7eaff">EMISSÃO SIMPLIFICADA</text>
+  <text x="131" y="220" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="800" letter-spacing="-1.4" fill="#fff">Transforme sua lista</text>
+  <text x="131" y="264" font-family="Inter,Arial,sans-serif" font-size="38" font-weight="800" letter-spacing="-1.4" fill="#fff">em certificados prontos.</text>
+  <text x="132" y="297" font-family="Inter,Arial,sans-serif" font-size="14" fill="#d8e2ff">Envie participantes e seu modelo. Cada pessoa recebe seu próprio certificado.</text>
+  <rect x="1060" y="167" width="220" height="143" rx="13" fill="url(#cert)" transform="rotate(5 1170 238)" filter="url(#shadow)"/>
+  <text x="1085" y="196" font-family="Inter,Arial,sans-serif" font-size="8" letter-spacing="1" fill="#697799">CERTIFICA · 2026</text>
+  <circle cx="1252" cy="192" r="12" fill="none" stroke="#776ee7"/>
+  <text x="1249" y="196" font-family="Georgia,serif" font-size="11" fill="#5148e5">✦</text>
+  <text x="1170" y="225" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" font-weight="800" letter-spacing="2" fill="#5148e5">CERTIFICADO DE CONCLUSÃO</text>
+  <text x="1170" y="250" text-anchor="middle" font-family="Georgia,serif" font-size="23" font-style="italic" fill="#182647">Ana Souza</text>
+  <path d="M1100 259h140" stroke="#cbd3e5"/>
+  <text x="1170" y="276" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#7d88a0">concluiu com êxito o programa de formação</text>
+  <rect x="1100" y="320" width="143" height="25" rx="8" fill="#fff" fill-opacity=".12" stroke="#fff" stroke-opacity=".16"/>
+  <text x="1120" y="336" font-family="Inter,Arial,sans-serif" font-size="9" fill="#fff">✓ Personalizado</text>
+  <text x="92" y="421" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="750" fill="#17233c">Seu fluxo, sem complicação</text>
+  <g font-family="Inter,Arial,sans-serif">
+    <rect x="92" y="443" width="390" height="77" rx="17" fill="#f3fcf9" stroke="#a9e4d4"/>
+    <rect x="110" y="462" width="34" height="34" rx="11" fill="#d8f5ec"/><text x="121" y="484" font-size="15" font-weight="800" fill="#16866f">✓</text>
+    <text x="157" y="475" font-size="13" font-weight="700" fill="#17233c">Etapa 1</text><text x="157" y="496" font-size="12" fill="#66748b">Lista pronta</text>
+    <rect x="525" y="443" width="390" height="77" rx="17" fill="#f4f3ff" stroke="#b9b5ff"/>
+    <rect x="543" y="462" width="34" height="34" rx="11" fill="#5148e5"/><text x="556" y="484" font-size="15" font-weight="800" fill="#fff">2</text>
+    <text x="590" y="475" font-size="13" font-weight="700" fill="#17233c">Etapa 2</text><text x="590" y="496" font-size="12" fill="#5148e5">Envie o modelo</text>
+    <rect x="958" y="443" width="390" height="77" rx="17" fill="#fff" stroke="#e5eaf2"/>
+    <rect x="976" y="462" width="34" height="34" rx="11" fill="#edf0f6"/><text x="989" y="484" font-size="15" font-weight="800" fill="#66748b">3</text>
+    <text x="1023" y="475" font-size="13" font-weight="700" fill="#17233c">Etapa 3</text><text x="1023" y="496" font-size="12" fill="#66748b">Gere e baixe</text>
+  </g>
+  <text x="92" y="563" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="750" fill="#17233c">Comece com dois arquivos</text>
+  <text x="92" y="584" font-family="Inter,Arial,sans-serif" font-size="12" fill="#718096">Sua planilha e o modelo são tudo que você precisa para começar.</text>
+  <g font-family="Inter,Arial,sans-serif">
+    <rect x="92" y="601" width="612" height="133" rx="19" fill="#fff" stroke="#e6eaf2" filter="url(#shadow)"/>
+    <text x="115" y="632" font-size="14" font-weight="750" fill="#17233c">1 · Lista de participantes</text><text x="115" y="653" font-size="11" fill="#718096">Planilha Excel com uma coluna nome.</text>
+    <rect x="115" y="667" width="566" height="48" rx="12" fill="#f9faff" stroke="#b9c4d7" stroke-dasharray="5 5"/>
+    <text x="398" y="696" text-anchor="middle" font-size="12" fill="#66748b">＋  Arraste ou escolha um arquivo .xlsx</text>
+    <rect x="736" y="601" width="612" height="133" rx="19" fill="#fff" stroke="#e6eaf2" filter="url(#shadow)"/>
+    <text x="759" y="632" font-size="14" font-weight="750" fill="#17233c">2 · Seu modelo de certificado</text><text x="759" y="653" font-size="11" fill="#718096">PDF ou PowerPoint com espaço para o nome.</text>
+    <rect x="759" y="667" width="566" height="48" rx="12" fill="#f9faff" stroke="#b9c4d7" stroke-dasharray="5 5"/>
+    <text x="1042" y="696" text-anchor="middle" font-size="12" fill="#66748b">＋  Arraste ou escolha um arquivo .pdf</text>
+  </g>
+  <text x="92" y="782" font-family="Inter,Arial,sans-serif" font-size="20" font-weight="750" fill="#17233c">Personalize com a prévia ao lado</text>
+  <rect x="92" y="801" width="565" height="192" rx="19" fill="#fff" stroke="#e6eaf2" filter="url(#shadow)"/>
+  <text x="117" y="836" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="750" fill="#17233c">Personalize o nome</text>
+  <text x="117" y="868" font-family="Inter,Arial,sans-serif" font-size="11" fill="#66748b">Estilo inicial</text>
+  <rect x="117" y="879" width="156" height="31" rx="9" fill="#f4f3ff" stroke="#b9b5ff"/><text x="132" y="899" font-family="Inter,Arial,sans-serif" font-size="10" fill="#5148e5">Moderno</text>
+  <text x="117" y="937" font-family="Inter,Arial,sans-serif" font-size="11" fill="#66748b">Posição horizontal</text><path d="M117 958h224" stroke="#e4e8f0" stroke-width="5" stroke-linecap="round"/><path d="M117 958h128" stroke="#5148e5" stroke-width="5" stroke-linecap="round"/><circle cx="245" cy="958" r="8" fill="#5148e5"/>
+  <text x="375" y="868" font-family="Inter,Arial,sans-serif" font-size="11" fill="#66748b">Fonte</text><rect x="375" y="879" width="251" height="31" rx="9" fill="#fff" stroke="#dfe4ee"/><text x="390" y="899" font-family="Inter,Arial,sans-serif" font-size="10" fill="#17233c">Moderna · negrito</text>
+  <text x="375" y="937" font-family="Inter,Arial,sans-serif" font-size="11" fill="#66748b">Tamanho e cor</text><rect x="375" y="948" width="131" height="25" rx="8" fill="#fff" stroke="#dfe4ee"/><text x="389" y="965" font-family="Inter,Arial,sans-serif" font-size="10" fill="#17233c">32 px</text><rect x="520" y="948" width="28" height="25" rx="7" fill="#17233c"/>
+  <rect x="683" y="801" width="665" height="192" rx="19" fill="#fff" stroke="#e6eaf2" filter="url(#shadow)"/>
+  <text x="709" y="836" font-family="Inter,Arial,sans-serif" font-size="14" font-weight="750" fill="#17233c">Prévia interativa</text>
+  <rect x="711" y="853" width="608" height="117" rx="7" fill="url(#cert)" stroke="#e1e5ed"/>
+  <rect x="727" y="867" width="576" height="89" rx="4" fill="none" stroke="#d8c9a4"/>
+  <text x="1015" y="891" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" font-weight="800" letter-spacing="2" fill="#776ee7">CERTIFICADO DE CONCLUSÃO</text>
+  <text x="1015" y="923" text-anchor="middle" font-family="Georgia,serif" font-size="25" font-style="italic" fill="#17233c">Ana Souza</text>
+  <path d="M890 932h250" stroke="#cbd3e5"/>
+  <text x="1015" y="946" text-anchor="middle" font-family="Inter,Arial,sans-serif" font-size="8" fill="#7d88a0">concluiu com êxito o curso de primeiros socorros</text>
+</svg>
