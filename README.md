@@ -22,7 +22,9 @@ src/gerador_certificados/
 
 ## Aplicação web
 
-A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes e baixar os certificados personalizados em um arquivo ZIP. A coluna dos nomes é fixa e deve se chamar `nome`. O nome é aplicado ao centro da primeira página do PDF; deixe essa área livre no modelo. A tela usa uma animação de entrada GSAP, respeitando a configuração de movimento reduzido do dispositivo. Os arquivos enviados são processados em diretório temporário durante a sessão.
+A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes, visualizar uma prévia personalizada e baixar os certificados em arquivos separados ou em um PDF único. A coluna dos nomes é fixa e deve se chamar `nome`. A posição, fonte, tamanho e cor do nome podem ser ajustados. A tela usa uma animação de entrada GSAP, respeitando a configuração de movimento reduzido do dispositivo. Os arquivos enviados são processados em diretório temporário durante a sessão.
+
+A interface limita a planilha a 5 MB, o certificado a 10 MB, a geração a 500 participantes e o tamanho estimado da saída a 100 MB.
 
 Para executar localmente:
 
@@ -92,9 +94,8 @@ CLI: planilha XLSX + modelo PPTX → validação → preenchimento de marcadores
 
 ## Próximas etapas
 
-1. Permitir escolher a posição, fonte e cor do nome sobre o PDF.
-2. Adicionar limites de tamanho dos arquivos e quantidade de participantes para proteger os recursos da hospedagem gratuita.
-3. Criar arquivos de exemplo válidos; os arquivos de modelo atualmente no repositório estão vazios.
+1. Criar arquivos de exemplo válidos; os arquivos de modelo atualmente no repositório estão vazios.
+2. Permitir ajustar a posição do nome arrastando-o diretamente sobre a prévia.
 
 ## Testes
 

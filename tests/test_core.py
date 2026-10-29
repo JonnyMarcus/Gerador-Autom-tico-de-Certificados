@@ -1,4 +1,5 @@
 from pathlib import Path
+from io import BytesIO
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
@@ -14,7 +15,10 @@ from streamlit.testing.v1 import AppTest
 from gerador_certificados.certificado import preencher_modelo
 from gerador_certificados.config import ROOT_DIR
 from gerador_certificados.exportador import nome_seguro
-from gerador_certificados.pdf_certificado import gerar_certificados_pdf
+from gerador_certificados.pdf_certificado import (
+    combinar_certificados_pdf,
+    gerar_certificados_pdf,
+)
 from gerador_certificados.planilha import ler_participantes
 from gerador_certificados.validacao import validar_participantes
 
@@ -93,6 +97,33 @@ class PdfTests(unittest.TestCase):
             self.assertIn("Ana Souza", textos[0])
             self.assertIn("João da Silva", textos[1])
             self.assertNotIn("Ana Souza", textos[1])
+
+            pdf_unico = PdfReader(BytesIO(combinar_certificados_pdf(arquivos)))
+            self.assertEqual(len(pdf_unico.pages), 2)
+            self.assertIn("João da Silva", pdf_unico.pages[1].extract_text())
+
+    def test_aceita_ajustes_visuais_e_valida_posicao(self):
+        with TemporaryDirectory() as diretorio:
+            pasta = Path(diretorio)
+            modelo = pasta / "modelo.pdf"
+            self.criar_modelo(modelo)
+            arquivo = gerar_certificados_pdf(
+                modelo,
+                pasta / "saida",
+                [{"nome": "Rita"}],
+                posicao_x=25,
+                posicao_y=30,
+                fonte="Times-Bold",
+                tamanho_fonte=24,
+                cor="#C00000",
+            )[0]
+            self.assertIn("Rita", PdfReader(arquivo).pages[0].extract_text())
+            with self.assertRaisesRegex(ValueError, "entre 0 e 100"):
+                gerar_certificados_pdf(modelo, pasta / "invalido", [{"nome": "Rita"}], posicao_x=101)
+
+    def test_nao_combina_lista_vazia(self):
+        with self.assertRaisesRegex(ValueError, "Não há certificados"):
+            combinar_certificados_pdf([])
 
     def test_preserva_paginas_adicionais_sem_escrever_nome_nelas(self):
         with TemporaryDirectory() as diretorio:
@@ -191,6 +222,33 @@ class WebAppTests(unittest.TestCase):
     def test_interface_inicia_sem_erros(self):
         app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
         self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get("file_uploader")), 2)
+        self.assertEqual(len(app.get("text_input")), 0)
+
+    def test_upload_e_geracao_disponibilizam_as_duas_opcoes_de_download(self):
+        workbook_buffer = BytesIO()
+        workbook = Workbook()
+        workbook.active.append(["nome"])
+        workbook.active.append(["Ana Souza"])
+        workbook.save(workbook_buffer)
+
+        pdf_buffer = BytesIO()
+        documento = canvas.Canvas(pdf_buffer, pagesize=(800, 500))
+        documento.drawCentredString(400, 450, "CERTIFICADO")
+        documento.showPage()
+        documento.save()
+
+        app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
+        uploaders = app.get("file_uploader")
+        uploaders[0].set_value(("participantes.xlsx", workbook_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        uploaders[1].set_value(("modelo.pdf", pdf_buffer.getvalue(), "application/pdf"))
+        app.run()
+        self.assertEqual(len(app.exception), 0)
+
+        app.button[0].click().run()
+
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get("download_button")), 2)
 
 
 class NomeSeguroTests(unittest.TestCase):

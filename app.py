@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 from io import BytesIO
 from hashlib import sha256
 from pathlib import Path
@@ -15,11 +16,20 @@ import streamlit as st
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from gerador_certificados.planilha import ler_participantes
-from gerador_certificados.pdf_certificado import gerar_certificados_pdf
+from gerador_certificados.pdf_certificado import (
+    FONTES_PDF,
+    combinar_certificados_pdf,
+    gerar_certificados_pdf,
+)
 from gerador_certificados.validacao import validar_participantes
 
 
 st.set_page_config(page_title="Certifica | Gerador de certificados", page_icon="🎓", layout="wide")
+
+MAX_XLSX_MB = 5
+MAX_PDF_MB = 10
+MAX_PARTICIPANTES = 500
+MAX_SAIDA_ESTIMADA_BYTES = 100 * 1024 * 1024
 
 
 def criar_zip(arquivos: list[Path]) -> bytes:
@@ -28,6 +38,32 @@ def criar_zip(arquivos: list[Path]) -> bytes:
         for arquivo in arquivos:
             pacote.write(arquivo, arcname=arquivo.name)
     return buffer.getvalue()
+
+
+def gerar_previa_pdf(
+    modelo_pdf: bytes,
+    nome: str,
+    posicao_x: int,
+    posicao_y: int,
+    fonte: str,
+    tamanho_fonte: int,
+    cor: str,
+) -> bytes:
+    with tempfile.TemporaryDirectory(prefix="certificados_previa_") as diretorio:
+        pasta = Path(diretorio)
+        modelo = pasta / "modelo.pdf"
+        modelo.write_bytes(modelo_pdf)
+        arquivo = gerar_certificados_pdf(
+            modelo,
+            pasta / "saida",
+            [{"nome": nome}],
+            posicao_x=posicao_x,
+            posicao_y=posicao_y,
+            fonte=fonte,
+            tamanho_fonte=tamanho_fonte,
+            cor=cor,
+        )[0]
+        return arquivo.read_bytes()
 
 
 st.markdown(
@@ -121,13 +157,13 @@ uploaded_count = 0
 left_step, right_step = st.columns(2)
 with left_step:
     st.markdown('<div class="section-title">1. Lista de participantes</div><div class="section-help">Selecione a planilha Excel (.xlsx)</div>', unsafe_allow_html=True)
-    arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload")
+    arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload", max_upload_size=MAX_XLSX_MB)
     if arquivo_planilha:
         uploaded_count += 1
         st.caption(f"✓ {arquivo_planilha.name}")
 with right_step:
     st.markdown('<div class="section-title">2. Certificado base</div><div class="section-help">Envie o arquivo PDF do certificado</div>', unsafe_allow_html=True)
-    arquivo_pdf = st.file_uploader("Escolher certificado PDF", type=["pdf"], label_visibility="collapsed", key="pdf_upload")
+    arquivo_pdf = st.file_uploader("Escolher certificado PDF", type=["pdf"], label_visibility="collapsed", key="pdf_upload", max_upload_size=MAX_PDF_MB)
     if arquivo_pdf:
         uploaded_count += 1
         st.caption(f"✓ {arquivo_pdf.name}")
@@ -140,15 +176,38 @@ st.markdown(
 
 coluna_nome = "nome"
 
+with st.expander("Ajustes do nome no certificado", expanded=False):
+    esquerda, direita = st.columns(2)
+    with esquerda:
+        posicao_x = st.slider("Posição horizontal", min_value=10, max_value=90, value=50, help="Controla a posição do centro do nome entre as margens.")
+        posicao_y = st.slider("Posição vertical", min_value=10, max_value=90, value=51, help="10% fica perto do topo; 90% fica perto da parte inferior.")
+    with direita:
+        fonte = st.selectbox("Fonte", options=FONTES_PDF, index=1)
+        tamanho_fonte = st.slider("Tamanho da fonte", min_value=12, max_value=48, value=32, help="Nomes compridos podem ser reduzidos automaticamente para caber.")
+        cor_texto = st.color_picker("Cor do nome", value="#17233C")
+
+st.caption(
+    f"Limites desta versão: planilha até {MAX_XLSX_MB} MB, PDF até {MAX_PDF_MB} MB, "
+    f"até {MAX_PARTICIPANTES} participantes e saída estimada até {MAX_SAIDA_ESTIMADA_BYTES // (1024 * 1024)} MB."
+)
+
 fingerprint = (
     coluna_nome,
+    posicao_x,
+    posicao_y,
+    fonte,
+    tamanho_fonte,
+    cor_texto,
     sha256(arquivo_planilha.getvalue()).hexdigest() if arquivo_planilha else None,
     sha256(arquivo_pdf.getvalue()).hexdigest() if arquivo_pdf else None,
 )
 if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("zip_certificados", None)
+    st.session_state.pop("pdf_unico", None)
+    st.session_state.pop("pdf_previa", None)
     st.session_state["fingerprint"] = fingerprint
 
+amostra = []
 if arquivo_planilha:
     try:
         with tempfile.TemporaryDirectory(prefix="certificados_preview_") as diretorio:
@@ -156,12 +215,35 @@ if arquivo_planilha:
             caminho_planilha.write_bytes(arquivo_planilha.getvalue())
             amostra = ler_participantes(caminho_planilha)
         st.markdown(f'<div class="section-title">Prévia da planilha <span style="color:#5148e5;font-size:.9rem">· {len(amostra)} participantes</span></div>', unsafe_allow_html=True)
-        st.dataframe(amostra[:10], use_container_width=True, hide_index=True)
+        st.dataframe(amostra[:10], width="stretch", hide_index=True)
     except (ValueError, OSError, KeyError) as error:
         st.error(f"Não foi possível ler a planilha: {error}")
 
+if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
+    try:
+        with st.spinner("Preparando prévia com o primeiro participante…"):
+            if "pdf_previa" not in st.session_state:
+                st.session_state["pdf_previa"] = gerar_previa_pdf(
+                    arquivo_pdf.getvalue(),
+                    amostra[0][coluna_nome],
+                    posicao_x,
+                    posicao_y,
+                    fonte,
+                    tamanho_fonte,
+                    cor_texto,
+                )
+        with st.expander("Prévia do primeiro certificado", expanded=True):
+            dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
+            st.iframe(
+                f"data:application/pdf;base64,{dados_pdf}",
+                height=540,
+                alt=f"Prévia do certificado de {amostra[0][coluna_nome]}",
+            )
+    except Exception as error:
+        st.warning(f"Não foi possível criar a prévia: {error}")
+
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-if st.button("✦  Gerar certificados", type="primary", use_container_width=True):
+if st.button("✦  Gerar certificados", type="primary", width="stretch"):
     if not arquivo_planilha or not arquivo_pdf:
         st.error("Envie a planilha e o PDF do certificado antes de continuar.")
     else:
@@ -175,15 +257,32 @@ if st.button("✦  Gerar certificados", type="primary", use_container_width=True
 
                 participantes = ler_participantes(caminho_planilha)
                 validar_participantes(participantes, coluna_nome, campos=[])
+                if len(participantes) > MAX_PARTICIPANTES:
+                    raise ValueError(
+                        f"O limite é {MAX_PARTICIPANTES} participantes por geração; "
+                        f"a planilha contém {len(participantes)}."
+                    )
+                saida_estimada = len(participantes) * arquivo_pdf.size
+                if saida_estimada > MAX_SAIDA_ESTIMADA_BYTES:
+                    limite_mb = MAX_SAIDA_ESTIMADA_BYTES // (1024 * 1024)
+                    raise ValueError(
+                        f"A saída estimada passa de {limite_mb} MB. "
+                        "Use um PDF menor ou divida os participantes em lotes."
+                    )
                 arquivos = gerar_certificados_pdf(
                     caminho_pdf,
                     pasta / "certificados",
                     participantes,
                     coluna_nome,
+                    posicao_x=posicao_x,
+                    posicao_y=posicao_y,
+                    fonte=fonte,
+                    tamanho_fonte=tamanho_fonte,
+                    cor=cor_texto,
                 )
                 st.session_state["zip_certificados"] = criar_zip(arquivos)
+                st.session_state["pdf_unico"] = combinar_certificados_pdf(arquivos)
 
-            st.success(f"{len(arquivos)} certificado(s) gerado(s).")
         except (FileNotFoundError, ValueError, PermissionError, OSError) as error:
             st.error(f"Não foi possível gerar os certificados: {error}")
         except Exception as error:
@@ -191,14 +290,24 @@ if st.button("✦  Gerar certificados", type="primary", use_container_width=True
 
 if st.session_state.get("zip_certificados"):
     st.success("Seus certificados estão prontos. Baixe o pacote abaixo.")
-    st.download_button(
-        "↓  Baixar certificados (.zip)",
-        data=st.session_state["zip_certificados"],
-        file_name="certificados.zip",
-        mime="application/zip",
-        type="primary",
-        use_container_width=True,
-    )
+    zip_coluna, pdf_coluna = st.columns(2)
+    with zip_coluna:
+        st.download_button(
+            "↓  PDFs separados (.zip)",
+            data=st.session_state["zip_certificados"],
+            file_name="certificados.zip",
+            mime="application/zip",
+            type="primary",
+            width="stretch",
+        )
+    with pdf_coluna:
+        st.download_button(
+            "↓  Todos em um PDF",
+            data=st.session_state["pdf_unico"],
+            file_name="certificados_completos.pdf",
+            mime="application/pdf",
+            width="stretch",
+        )
 
 st.markdown(
     '<div class="privacy-note">Seus arquivos são processados para esta geração e não devem conter dados confidenciais.</div>',
