@@ -97,6 +97,14 @@ class PdfTests(unittest.TestCase):
             self.assertIn("Ana Souza", textos[0])
             self.assertIn("João da Silva", textos[1])
             self.assertNotIn("Ana Souza", textos[1])
+            progresso = []
+            gerar_certificados_pdf(
+                modelo,
+                pasta / "com_progresso",
+                [{"nome": "Ana"}, {"nome": "João"}],
+                ao_gerar=lambda atual, total: progresso.append((atual, total)),
+            )
+            self.assertEqual(progresso, [(1, 2), (2, 2)])
 
             pdf_unico = PdfReader(BytesIO(combinar_certificados_pdf(arquivos)))
             self.assertEqual(len(pdf_unico.pages), 2)

@@ -73,9 +73,14 @@ st.markdown(
       [data-testid="stAppViewContainer"] { background:linear-gradient(180deg,#f3f6fc 0%,#fbfcff 340px,#fbfcff 100%); }
       [data-testid="stHeader"] { background:transparent; }
       .block-container { max-width:1120px; padding-top:2rem; padding-bottom:4rem; }
-      .step-card { background:#fff; border:1px solid #e5eaf2; border-radius:14px; padding:.85rem 1rem; color:#66748b; font-size:.88rem; margin:.4rem 0 1.2rem; }
-      .step-card strong { color:#17233c; }
+      .step-card { min-height:70px; display:flex; align-items:center; gap:.7rem; background:#fff; border:1px solid #e5eaf2; border-radius:14px; padding:.8rem 1rem; color:#66748b; font-size:.84rem; margin:.35rem 0 1.2rem; }
+      .step-card strong { display:block; color:#17233c; font-size:.92rem; }
+      .step-icon { width:30px; height:30px; flex:0 0 30px; display:grid; place-items:center; border-radius:50%; background:#edf0f6; color:#66748b; font-weight:800; }
+      .step-card.complete { border-color:#b3eadc; background:#f3fcf9; }
+      .step-card.complete .step-icon { background:#d8f5ec; color:#16866f; }
       .step-card.active { border-color:#b9b5ff; background:#f4f3ff; color:#5148e5; }
+      .step-card.active .step-icon { background:#5148e5; color:#fff; }
+      .step-card.pending { opacity:.78; }
       .section-title { color:#17233c; font-size:1.25rem; font-weight:750; margin:.7rem 0 .2rem; }
       .section-help { color:#718096; font-size:.9rem; margin-bottom:1rem; }
       [data-testid="stFileUploader"] section { background:#fff; border:1px dashed #bac6d8; border-radius:15px; }
@@ -160,19 +165,28 @@ with left_step:
     arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload", max_upload_size=MAX_XLSX_MB)
     if arquivo_planilha:
         uploaded_count += 1
-        st.caption(f"✓ {arquivo_planilha.name}")
+        st.caption(f"✓ {arquivo_planilha.name} · {arquivo_planilha.size / (1024 * 1024):.2f} MB")
 with right_step:
     st.markdown('<div class="section-title">2. Certificado base</div><div class="section-help">Envie o arquivo PDF do certificado</div>', unsafe_allow_html=True)
     arquivo_pdf = st.file_uploader("Escolher certificado PDF", type=["pdf"], label_visibility="collapsed", key="pdf_upload", max_upload_size=MAX_PDF_MB)
     if arquivo_pdf:
         uploaded_count += 1
-        st.caption(f"✓ {arquivo_pdf.name}")
+        st.caption(f"✓ {arquivo_pdf.name} · {arquivo_pdf.size / (1024 * 1024):.2f} MB")
 
-step_class = "active" if uploaded_count == 2 else ""
-st.markdown(
-    f'<div class="step-card {step_class}"><strong>3. Gerar e baixar</strong> · Os arquivos ficam disponíveis em um único ZIP</div>',
-    unsafe_allow_html=True,
-)
+steps = st.columns(3)
+status_steps = [
+    ("1", "Lista pronta" if arquivo_planilha else "Envie a lista", bool(arquivo_planilha)),
+    ("2", "PDF pronto" if arquivo_pdf else "Envie o certificado", bool(arquivo_pdf)),
+    ("3", "Pronto para gerar" if uploaded_count == 2 else "Gere e baixe", False),
+]
+proximo_passo = 0 if not arquivo_planilha else (1 if not arquivo_pdf else 2)
+for indice, (numero, texto, concluido) in enumerate(status_steps):
+    classe = "complete" if concluido else ("active" if indice == proximo_passo else "pending")
+    icone = "✓" if concluido else numero
+    steps[indice].markdown(
+        f'<div class="step-card {classe}"><span class="step-icon">{icone}</span><span><strong>Etapa {numero}</strong>{texto}</span></div>',
+        unsafe_allow_html=True,
+    )
 
 coluna_nome = "nome"
 
@@ -205,6 +219,7 @@ if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("zip_certificados", None)
     st.session_state.pop("pdf_unico", None)
     st.session_state.pop("pdf_previa", None)
+    st.session_state.pop("total_certificados", None)
     st.session_state["fingerprint"] = fingerprint
 
 amostra = []
@@ -269,19 +284,30 @@ if st.button("✦  Gerar certificados", type="primary", width="stretch"):
                         f"A saída estimada passa de {limite_mb} MB. "
                         "Use um PDF menor ou divida os participantes em lotes."
                     )
-                arquivos = gerar_certificados_pdf(
-                    caminho_pdf,
-                    pasta / "certificados",
-                    participantes,
-                    coluna_nome,
-                    posicao_x=posicao_x,
-                    posicao_y=posicao_y,
-                    fonte=fonte,
-                    tamanho_fonte=tamanho_fonte,
-                    cor=cor_texto,
-                )
+                progresso = st.progress(0, text="Preparando os certificados…")
+
+                def atualizar_progresso(atual: int, total: int) -> None:
+                    percentual = int(atual / total * 100)
+                    progresso.progress(percentual, text=f"Gerando certificado {atual} de {total}…")
+
+                try:
+                    arquivos = gerar_certificados_pdf(
+                        caminho_pdf,
+                        pasta / "certificados",
+                        participantes,
+                        coluna_nome,
+                        posicao_x=posicao_x,
+                        posicao_y=posicao_y,
+                        fonte=fonte,
+                        tamanho_fonte=tamanho_fonte,
+                        cor=cor_texto,
+                        ao_gerar=atualizar_progresso,
+                    )
+                finally:
+                    progresso.empty()
                 st.session_state["zip_certificados"] = criar_zip(arquivos)
                 st.session_state["pdf_unico"] = combinar_certificados_pdf(arquivos)
+                st.session_state["total_certificados"] = len(arquivos)
 
         except (FileNotFoundError, ValueError, PermissionError, OSError) as error:
             st.error(f"Não foi possível gerar os certificados: {error}")
@@ -289,7 +315,7 @@ if st.button("✦  Gerar certificados", type="primary", width="stretch"):
             st.error(f"Ocorreu um erro ao processar os arquivos: {error}")
 
 if st.session_state.get("zip_certificados"):
-    st.success("Seus certificados estão prontos. Baixe o pacote abaixo.")
+    st.success(f"{st.session_state['total_certificados']} certificados prontos. Escolha como baixar:")
     zip_coluna, pdf_coluna = st.columns(2)
     with zip_coluna:
         st.download_button(

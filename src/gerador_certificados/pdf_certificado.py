@@ -1,3 +1,4 @@
+from collections.abc import Callable
 from io import BytesIO
 from pathlib import Path
 
@@ -46,6 +47,7 @@ def gerar_certificados_pdf(
     fonte: str = "Helvetica-Bold",
     tamanho_fonte: float = 32,
     cor: str = "#17233C",
+    ao_gerar: Callable[[int, int], None] | None = None,
 ) -> list[Path]:
     """Aplica cada nome à primeira página do PDF, usando coordenadas percentuais."""
     if not modelo.is_file():
@@ -92,6 +94,8 @@ def gerar_certificados_pdf(
         with destino.open("wb") as arquivo:
             escritor.write(arquivo)
         destinos.append(destino)
+        if ao_gerar:
+            ao_gerar(indice, len(participantes))
 
     return destinos
 
