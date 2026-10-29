@@ -334,27 +334,34 @@ def criar_pdf_exemplo() -> bytes:
 st.markdown(
     """
     <style>
-      :root { --ink:#17233c; --muted:#66748b; --brand:#5148e5; --mint:#22b8a5; }
-      [data-testid="stAppViewContainer"] { background:linear-gradient(180deg,#f3f6fc 0%,#fbfcff 340px,#fbfcff 100%); }
+      :root { --ink:#17233c; --muted:#66748b; --brand:#5148e5; --mint:#22b8a5; --line:#e5eaf2; }
+      [data-testid="stAppViewContainer"] { background:radial-gradient(ellipse at 50% 0%,rgba(81,72,229,.075),transparent 38%),linear-gradient(180deg,#f5f7fc 0%,#fbfcff 420px,#fbfcff 100%); }
       [data-testid="stHeader"] { background:transparent; }
-      .block-container { max-width:1120px; padding-top:2rem; padding-bottom:4rem; }
-      .step-card { min-height:70px; display:flex; align-items:center; gap:.7rem; background:#fff; border:1px solid #e5eaf2; border-radius:14px; padding:.8rem 1rem; color:#66748b; font-size:.84rem; margin:.35rem 0 1.2rem; }
+      .block-container { max-width:1180px; padding-top:1.8rem; padding-bottom:4rem; }
+      .step-card { min-height:76px; display:flex; align-items:center; gap:.8rem; background:rgba(255,255,255,.88); border:1px solid var(--line); border-radius:17px; padding:.9rem 1.05rem; color:#66748b; font-size:.84rem; margin:.35rem 0 1.35rem; box-shadow:0 5px 18px rgba(23,35,60,.035); transition:transform .2s ease,border-color .2s ease,box-shadow .2s ease; }
       .step-card strong { display:block; color:#17233c; font-size:.92rem; }
-      .step-icon { width:30px; height:30px; flex:0 0 30px; display:grid; place-items:center; border-radius:50%; background:#edf0f6; color:#66748b; font-weight:800; }
-      .step-card.complete { border-color:#b3eadc; background:#f3fcf9; }
+      .step-icon { width:34px; height:34px; flex:0 0 34px; display:grid; place-items:center; border-radius:12px; background:#edf0f6; color:#66748b; font-weight:800; }
+      .step-card.complete { border-color:#a9e4d4; background:linear-gradient(135deg,#f4fcf9,#fff); }
       .step-card.complete .step-icon { background:#d8f5ec; color:#16866f; }
-      .step-card.active { border-color:#b9b5ff; background:#f4f3ff; color:#5148e5; }
+      .step-card.active { border-color:#b9b5ff; background:linear-gradient(135deg,#f4f3ff,#fff); color:#5148e5; box-shadow:0 8px 22px rgba(81,72,229,.08); }
       .step-card.active .step-icon { background:#5148e5; color:#fff; }
-      .step-card.pending { opacity:.78; }
-      .section-title { color:#17233c; font-size:1.25rem; font-weight:750; margin:.7rem 0 .2rem; }
-      .section-help { color:#718096; font-size:.9rem; margin-bottom:1rem; }
-      [data-testid="stFileUploader"] section { background:#fff; border:1px dashed #bac6d8; border-radius:15px; }
-      [data-testid="stFileUploader"] section:hover { border-color:#5148e5; }
-      [data-testid="stExpander"] { background:#fff; border:1px solid #e6eaf1; border-radius:14px; }
-      div.stButton > button, div.stDownloadButton > button { min-height:3rem; border-radius:12px; font-weight:700; }
-      [data-testid="stDataFrame"] { border:1px solid #e5eaf2; border-radius:12px; overflow:hidden; }
+      .step-card.pending { opacity:.7; }
+      .section-title { color:#17233c; font-size:1.22rem; font-weight:760; letter-spacing:-.025em; margin:.2rem 0 .2rem; }
+      .section-help { color:#718096; font-size:.88rem; margin-bottom:.8rem; }
+      [data-testid="stVerticalBlockBorderWrapper"] { background:rgba(255,255,255,.9); border-color:#e6eaf2; border-radius:19px; box-shadow:0 8px 28px rgba(23,35,60,.045); }
+      [data-testid="stFileUploader"] section { background:#f9faff; border:1px dashed #b9c4d7; border-radius:15px; transition:background .18s ease,border-color .18s ease; }
+      [data-testid="stFileUploader"] section:hover { border-color:#766ff0; background:#f4f3ff; }
+      [data-testid="stExpander"] { background:rgba(255,255,255,.92); border:1px solid #e6eaf1; border-radius:16px; }
+      div.stButton > button, div.stDownloadButton > button { min-height:3rem; border-radius:13px; font-weight:700; transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease; }
+      div.stButton > button:hover, div.stDownloadButton > button:hover { transform:translateY(-1px); box-shadow:0 8px 18px rgba(81,72,229,.13); }
+      [data-testid="stDataFrame"] { border:1px solid #e5eaf2; border-radius:13px; overflow:hidden; }
+      [data-testid="stAlert"] { border-radius:14px; }
+      [data-testid="stMetric"] { background:#f8f9ff; border:1px solid #e8eafb; border-radius:15px; padding:.85rem 1rem; }
+      input,textarea,[data-baseweb="select"] > div { border-radius:11px !important; }
+      button:focus-visible,a:focus-visible { outline:3px solid rgba(81,72,229,.55); outline-offset:2px; }
       .privacy-note { color:#7b8798; font-size:.78rem; text-align:center; margin-top:2rem; }
-      @media (max-width: 700px) { .block-container { padding:1.1rem 1rem 3rem; } }
+      @media (max-width: 700px) { .block-container { padding:1rem .8rem 3rem; } .step-card { min-height:68px; padding:.7rem .75rem; border-radius:14px; } .step-card strong { font-size:.82rem; } }
+      @media (prefers-reduced-motion: reduce) { *,*::before,*::after { scroll-behavior:auto !important; transition:none !important; } }
     </style>
     """,
     unsafe_allow_html=True,
@@ -453,25 +460,31 @@ arquivo_modelo = None
 
 uploaded_count = 0
 
-left_step, right_step = st.columns(2)
+st.markdown(
+    '<div class="section-title">Comece com dois arquivos</div><div class="section-help">Sua planilha e o modelo são tudo que você precisa para gerar o primeiro lote.</div>',
+    unsafe_allow_html=True,
+)
+left_step, right_step = st.columns(2, gap="large")
 with left_step:
-    st.markdown('<div class="section-title">1. Lista de participantes</div><div class="section-help">Selecione a planilha Excel (.xlsx)</div>', unsafe_allow_html=True)
-    arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload", max_upload_size=MAX_XLSX_MB)
-    if arquivo_planilha:
-        uploaded_count += 1
-        st.caption(f"✓ {arquivo_planilha.name} · {arquivo_planilha.size / (1024 * 1024):.2f} MB")
+    with st.container(border=True):
+        st.markdown('<div class="section-title">1. Lista de participantes</div><div class="section-help">Sua lista em Excel, com os nomes na primeira coluna.</div>', unsafe_allow_html=True)
+        arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload", max_upload_size=MAX_XLSX_MB)
+        if arquivo_planilha:
+            uploaded_count += 1
+            st.caption(f"✓ {arquivo_planilha.name} · {arquivo_planilha.size / (1024 * 1024):.2f} MB")
 with right_step:
-    st.markdown(f'<div class="section-title">2. {rotulo_modelo}</div><div class="section-help">Envie o arquivo do modelo</div>', unsafe_allow_html=True)
-    arquivo_modelo = st.file_uploader(
-        "Escolher modelo de certificado",
-        type=tipo_modelo,
-        label_visibility="collapsed",
-        key="pdf_upload" if formato_saida == "PDF" else "pptx_upload",
-        max_upload_size=MAX_PDF_MB,
-    )
-    if arquivo_modelo:
-        uploaded_count += 1
-        st.caption(f"✓ {arquivo_modelo.name} · {arquivo_modelo.size / (1024 * 1024):.2f} MB")
+    with st.container(border=True):
+        st.markdown(f'<div class="section-title">2. {rotulo_modelo}</div><div class="section-help">Envie o arquivo que servirá de base para cada participante.</div>', unsafe_allow_html=True)
+        arquivo_modelo = st.file_uploader(
+            "Escolher modelo de certificado",
+            type=tipo_modelo,
+            label_visibility="collapsed",
+            key="pdf_upload" if formato_saida == "PDF" else "pptx_upload",
+            max_upload_size=MAX_PDF_MB,
+        )
+        if arquivo_modelo:
+            uploaded_count += 1
+            st.caption(f"✓ {arquivo_modelo.name} · {arquivo_modelo.size / (1024 * 1024):.2f} MB")
 
 arquivo_pdf = arquivo_modelo if formato_saida == "PDF" else None
 arquivo_pptx = arquivo_modelo if formato_saida == "PowerPoint" else None
@@ -480,7 +493,11 @@ steps = st.columns(3)
 status_steps = [
     ("1", "Lista pronta" if arquivo_planilha else "Envie a lista", bool(arquivo_planilha)),
     ("2", f"{formato_saida} pronto" if arquivo_modelo else "Envie o modelo", bool(arquivo_modelo)),
-    ("3", "Pronto para gerar" if uploaded_count == 2 else "Gere e baixe", False),
+    (
+        "3",
+        "Certificados gerados" if st.session_state.get("zip_certificados") else ("Pronto para gerar" if uploaded_count == 2 else "Gere e baixe"),
+        bool(st.session_state.get("zip_certificados")),
+    ),
 ]
 proximo_passo = 0 if not arquivo_planilha else (1 if not arquivo_modelo else 2)
 for indice, (numero, texto, concluido) in enumerate(status_steps):
@@ -880,13 +897,16 @@ if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
                     qr_previa,
                     qr_posicao,
                 )
-        with st.expander("Prévia do primeiro certificado", expanded=True):
-            dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
-            st.iframe(
-                f"data:application/pdf;base64,{dados_pdf}",
-                height=540,
-                alt=f"Prévia do certificado de {amostra[0][coluna_nome]}",
-            )
+        with st.container(border=True):
+            st.markdown('<div class="section-title">Veja o resultado antes de gerar</div>', unsafe_allow_html=True)
+            st.caption("A prévia acompanha os ajustes de posição, tipografia e cor escolhidos acima.")
+            with st.expander("Prévia do primeiro certificado", expanded=True):
+                dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
+                st.iframe(
+                    f"data:application/pdf;base64,{dados_pdf}",
+                    height=540,
+                    alt=f"Prévia do certificado de {amostra[0][coluna_nome]}",
+                )
     except Exception as error:
         st.warning(f"Não foi possível criar a prévia: {error}")
 
@@ -982,23 +1002,28 @@ if st.button("Gerar certificados", type="primary", width="stretch"):
 
 if st.session_state.get("zip_certificados"):
     formato_resultado = st.session_state.get("formato_resultado", "PDF")
-    st.success(f"{st.session_state['total_certificados']} certificados {formato_resultado} prontos.")
-    st.download_button(
-        f"Baixar arquivos {formato_resultado} (.zip)",
-        data=st.session_state["zip_certificados"],
-        file_name="certificados.zip" if formato_resultado == "PDF" else "certificados_powerpoint.zip",
-        mime="application/zip",
-        type="primary",
-        width="stretch",
-    )
-    if st.session_state.get("pdf_unico"):
+    with st.container(border=True):
+        st.markdown('<div class="section-title">Seu lote está pronto</div>', unsafe_allow_html=True)
+        total_gerado = st.session_state["total_certificados"]
+        metrica_lote, formato_lote = st.columns(2)
+        metrica_lote.metric("Certificados gerados", total_gerado)
+        formato_lote.metric("Formato de saída", formato_resultado)
         st.download_button(
-            "Baixar todos em um PDF",
-            data=st.session_state["pdf_unico"],
-            file_name="certificados_completos.pdf",
-            mime="application/pdf",
+            f"Baixar arquivos {formato_resultado} (.zip)",
+            data=st.session_state["zip_certificados"],
+            file_name="certificados.zip" if formato_resultado == "PDF" else "certificados_powerpoint.zip",
+            mime="application/zip",
+            type="primary",
             width="stretch",
         )
+        if st.session_state.get("pdf_unico"):
+            st.download_button(
+                "Baixar todos em um PDF",
+                data=st.session_state["pdf_unico"],
+                file_name="certificados_completos.pdf",
+                mime="application/pdf",
+                width="stretch",
+            )
 
 if st.session_state.get("pendentes_email"):
     st.subheader("Revisar e confirmar o envio por e-mail")
