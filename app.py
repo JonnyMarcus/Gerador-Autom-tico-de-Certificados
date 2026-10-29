@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import html
 from io import BytesIO
 from hashlib import sha256
 from pathlib import Path
@@ -138,6 +139,11 @@ def guardar_no_historico(formato: str, quantidade: int, arquivo_zip: bytes) -> N
         },
     )
     st.session_state["historico_emissoes"] = historico[:3]
+
+
+def substituir_upload(chave_versao: str) -> None:
+    """Troca a chave do uploader para limpar o arquivo atual com segurança."""
+    st.session_state[chave_versao] = st.session_state.get(chave_versao, 0) + 1
 
 
 def obter_config_smtp() -> tuple[dict[str, object], str | None]:
@@ -346,6 +352,14 @@ st.markdown(
       .step-card.active { border-color:#b9b5ff; background:linear-gradient(135deg,#f4f3ff,#fff); color:#5148e5; box-shadow:0 8px 22px rgba(81,72,229,.08); }
       .step-card.active .step-icon { background:#5148e5; color:#fff; }
       .step-card.pending { opacity:.7; }
+      .workflow-progress { display:flex; align-items:center; gap:14px; margin:-.65rem 0 1.35rem; color:#66748b; font-size:.8rem; }
+      .workflow-track { flex:1; height:7px; overflow:hidden; border-radius:99px; background:#e9edf5; }
+      .workflow-fill { height:100%; border-radius:inherit; background:linear-gradient(90deg,#5148e5,#22b8a5); transition:width .45s ease; }
+      .upload-ready { display:flex; align-items:center; gap:.65rem; margin-top:.7rem; padding:.65rem .75rem; border:1px solid #cceee4; border-radius:12px; background:#f4fcf9; color:#16866f; }
+      .upload-ready-icon { font-size:1.15rem; }
+      .upload-ready strong { display:block; color:#17233c; font-size:.86rem; overflow-wrap:anywhere; }
+      .upload-ready small { color:#66748b; font-size:.75rem; }
+      .live-preview-title { margin:0 0 .25rem; color:#17233c; font-size:1.05rem; font-weight:750; }
       .section-title { color:#17233c; font-size:1.22rem; font-weight:760; letter-spacing:-.025em; margin:.2rem 0 .2rem; }
       .section-help { color:#718096; font-size:.88rem; margin-bottom:.8rem; }
       [data-testid="stVerticalBlockBorderWrapper"] { background:rgba(255,255,255,.9); border-color:#e6eaf2; border-radius:19px; box-shadow:0 8px 28px rgba(23,35,60,.045); }
@@ -468,23 +482,40 @@ left_step, right_step = st.columns(2, gap="large")
 with left_step:
     with st.container(border=True):
         st.markdown('<div class="section-title">1. Lista de participantes</div><div class="section-help">Sua lista em Excel, com os nomes na primeira coluna.</div>', unsafe_allow_html=True)
-        arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key="planilha_upload", max_upload_size=MAX_XLSX_MB)
+        planilha_versao = st.session_state.setdefault("planilha_upload_version", 0)
+        arquivo_planilha = st.file_uploader("Escolher planilha", type=["xlsx"], label_visibility="collapsed", key=f"planilha_upload_{planilha_versao}", max_upload_size=MAX_XLSX_MB)
         if arquivo_planilha:
             uploaded_count += 1
-            st.caption(f"✓ {arquivo_planilha.name} · {arquivo_planilha.size / (1024 * 1024):.2f} MB")
+            st.markdown(
+                f'<div class="upload-ready"><span class="upload-ready-icon">📊</span><span><strong>{html.escape(arquivo_planilha.name)}</strong><small>Planilha pronta · {arquivo_planilha.size / (1024 * 1024):.2f} MB</small></span></div>',
+                unsafe_allow_html=True,
+            )
+            st.button("Substituir planilha", key="substituir_planilha", on_click=substituir_upload, args=("planilha_upload_version",))
 with right_step:
     with st.container(border=True):
         st.markdown(f'<div class="section-title">2. {rotulo_modelo}</div><div class="section-help">Envie o arquivo que servirá de base para cada participante.</div>', unsafe_allow_html=True)
+        versao_modelo_key = f"modelo_{formato_saida.lower()}_upload_version"
+        versao_modelo = st.session_state.setdefault(versao_modelo_key, 0)
         arquivo_modelo = st.file_uploader(
             "Escolher modelo de certificado",
             type=tipo_modelo,
             label_visibility="collapsed",
-            key="pdf_upload" if formato_saida == "PDF" else "pptx_upload",
+            key=f"modelo_{formato_saida.lower()}_upload_{versao_modelo}",
             max_upload_size=MAX_PDF_MB,
         )
         if arquivo_modelo:
             uploaded_count += 1
-            st.caption(f"✓ {arquivo_modelo.name} · {arquivo_modelo.size / (1024 * 1024):.2f} MB")
+            extensao_modelo = "PDF" if formato_saida == "PDF" else "PowerPoint"
+            st.markdown(
+                f'<div class="upload-ready"><span class="upload-ready-icon">📄</span><span><strong>{html.escape(arquivo_modelo.name)}</strong><small>{extensao_modelo} pronto · {arquivo_modelo.size / (1024 * 1024):.2f} MB</small></span></div>',
+                unsafe_allow_html=True,
+            )
+            st.button(
+                "Substituir modelo",
+                key="substituir_modelo",
+                on_click=substituir_upload,
+                args=(f"modelo_{formato_saida.lower()}_upload_version",),
+            )
 
 arquivo_pdf = arquivo_modelo if formato_saida == "PDF" else None
 arquivo_pptx = arquivo_modelo if formato_saida == "PowerPoint" else None
@@ -507,6 +538,13 @@ for indice, (numero, texto, concluido) in enumerate(status_steps):
         f'<div class="step-card {classe}"><span class="step-icon">{icone}</span><span><strong>Etapa {numero}</strong>{texto}</span></div>',
         unsafe_allow_html=True,
     )
+
+progresso_fluxo = 100 if st.session_state.get("zip_certificados") else (70 if uploaded_count == 2 else (35 if uploaded_count else 0))
+rotulo_progresso = "Lote concluído" if progresso_fluxo == 100 else ("Arquivos prontos para personalizar" if progresso_fluxo == 70 else ("Primeiro arquivo carregado" if progresso_fluxo else "Aguardando seus arquivos"))
+st.markdown(
+    f'<div class="workflow-progress" role="progressbar" aria-label="Progresso da criação" aria-valuemin="0" aria-valuemax="100" aria-valuenow="{progresso_fluxo}"><span>{rotulo_progresso}</span><div class="workflow-track"><div class="workflow-fill" style="width:{progresso_fluxo}%"></div></div><strong>{progresso_fluxo}%</strong></div>',
+    unsafe_allow_html=True,
+)
 
 coluna_nome = "nome"
 amostra = []
@@ -641,132 +679,139 @@ tamanho_fonte = 32
 cor_texto = "#17233C"
 campos_extras = {}
 if formato_saida == "PDF":
-    st.session_state.setdefault("estilo_personalizacao", "Personalizado")
-    st.session_state.setdefault("personalizacao_x", 50)
-    st.session_state.setdefault("personalizacao_y", 51)
-    st.session_state.setdefault("personalizacao_fonte", "Helvetica-Bold")
-    st.session_state.setdefault("personalizacao_tamanho", 32)
-    st.session_state.setdefault("personalizacao_cor", "#17233C")
-    st.session_state.setdefault("estilo_aplicado", "Personalizado")
+    ajustes_coluna, previa_coluna = st.columns([0.95, 1.05], gap="large")
+    with ajustes_coluna:
+        st.session_state.setdefault("estilo_personalizacao", "Personalizado")
+        st.session_state.setdefault("personalizacao_x", 50)
+        st.session_state.setdefault("personalizacao_y", 51)
+        st.session_state.setdefault("personalizacao_fonte", "Helvetica-Bold")
+        st.session_state.setdefault("personalizacao_tamanho", 32)
+        st.session_state.setdefault("personalizacao_cor", "#17233C")
+        st.session_state.setdefault("estilo_aplicado", "Personalizado")
 
-    with st.expander("Personalize o nome", expanded=True):
-        st.markdown("Comece por um estilo pronto ou ajuste cada detalhe. A prévia acompanha suas mudanças.")
-        estilo = st.radio(
-            "Estilo inicial",
-            options=["Personalizado", *ESTILOS],
-            horizontal=True,
-            key="estilo_personalizacao",
-        )
-        if estilo != st.session_state["estilo_aplicado"]:
-            if estilo in ESTILOS:
-                preset = ESTILOS[estilo]
-                st.session_state["personalizacao_x"] = preset["x"]
-                st.session_state["personalizacao_y"] = preset["y"]
-                st.session_state["personalizacao_fonte"] = preset["fonte"]
-                st.session_state["rotulo_fonte"] = next(
-                    rotulo for rotulo, fonte_pdf in FONTES_EXIBICAO.items() if fonte_pdf == preset["fonte"]
+        with st.expander("Personalize o nome", expanded=True):
+            st.markdown("Comece por um estilo pronto ou ajuste cada detalhe. A prévia acompanha suas mudanças.")
+            estilo = st.radio(
+                "Estilo inicial",
+                options=["Personalizado", *ESTILOS],
+                horizontal=True,
+                key="estilo_personalizacao",
+            )
+            if estilo != st.session_state["estilo_aplicado"]:
+                if estilo in ESTILOS:
+                    preset = ESTILOS[estilo]
+                    st.session_state["personalizacao_x"] = preset["x"]
+                    st.session_state["personalizacao_y"] = preset["y"]
+                    st.session_state["personalizacao_fonte"] = preset["fonte"]
+                    st.session_state["rotulo_fonte"] = next(
+                        rotulo for rotulo, fonte_pdf in FONTES_EXIBICAO.items() if fonte_pdf == preset["fonte"]
+                    )
+                    st.session_state["personalizacao_tamanho"] = preset["tamanho"]
+                    st.session_state["personalizacao_cor"] = preset["cor"]
+                st.session_state["estilo_aplicado"] = estilo
+
+            st.session_state.setdefault("rotulo_fonte", "Moderna · negrito")
+
+            esquerda, direita = st.columns(2)
+            with esquerda:
+                posicao_x = st.slider(
+                    "Posição horizontal",
+                    min_value=10,
+                    max_value=90,
+                    key="personalizacao_x",
+                    help="Controla o centro do nome entre as margens.",
+                    on_change=marcar_personalizado,
                 )
-                st.session_state["personalizacao_tamanho"] = preset["tamanho"]
-                st.session_state["personalizacao_cor"] = preset["cor"]
-            st.session_state["estilo_aplicado"] = estilo
+                posicao_y = st.slider(
+                    "Posição vertical",
+                    min_value=10,
+                    max_value=90,
+                    key="personalizacao_y",
+                    help="10% fica perto do topo; 90% fica perto da parte inferior.",
+                    on_change=marcar_personalizado,
+                )
+            with direita:
+                st.markdown("**Estilo tipográfico**")
+                rotulo_fonte = st.selectbox(
+                    "Fonte",
+                    options=list(FONTES_EXIBICAO),
+                    key="rotulo_fonte",
+                    format_func=lambda opcao: opcao,
+                    on_change=marcar_personalizado,
+                    help="Escolha entre estilos modernos, clássicos e monoespaçados, com variações de peso e inclinação.",
+                )
+                fonte = FONTES_EXIBICAO[rotulo_fonte]
+                st.caption("As fontes são incorporadas como recursos padrão do PDF; não é preciso instalar nada.")
+                tamanho_fonte = st.slider(
+                    "Tamanho da fonte",
+                    min_value=12,
+                    max_value=48,
+                    key="personalizacao_tamanho",
+                    help="Nomes compridos são reduzidos automaticamente para caber.",
+                    on_change=marcar_personalizado,
+                )
+                cor_texto = st.color_picker(
+                    "Cor do nome",
+                    key="personalizacao_cor",
+                    on_change=marcar_personalizado,
+                )
 
-        st.session_state.setdefault("rotulo_fonte", "Moderna · negrito")
+        campos_extras = {}
+        if campos_selecionados:
+            with st.expander("Posição dos dados adicionais", expanded=False):
+                st.caption("Cada campo será centralizado na posição escolhida, usando a fonte e a cor do nome.")
+                for indice, campo in enumerate(campos_selecionados):
+                    st.markdown(f"**{campo.replace('_', ' ').capitalize()}**")
+                    chave_x = f"campo_extra_{campo}_x"
+                    chave_y = f"campo_extra_{campo}_y"
+                    st.session_state.setdefault(chave_x, 50)
+                    st.session_state.setdefault(chave_y, min(90, 62 + indice * 8))
+                    col_x, col_y = st.columns(2)
+                    with col_x:
+                        st.slider("Posição horizontal (%)", 5, 95, key=chave_x, on_change=marcar_personalizado)
+                    with col_y:
+                        st.slider("Posição vertical (%)", 5, 95, key=chave_y, on_change=marcar_personalizado)
+                    campos_extras[campo] = {
+                        "x": st.session_state[chave_x],
+                        "y": st.session_state[chave_y],
+                        "fonte": fonte,
+                        "tamanho": max(10, tamanho_fonte - 5),
+                        "cor": cor_texto,
+                    }
 
-        esquerda, direita = st.columns(2)
-        with esquerda:
-            posicao_x = st.slider(
-                "Posição horizontal",
-                min_value=10,
-                max_value=90,
-                key="personalizacao_x",
-                help="Controla o centro do nome entre as margens.",
-                on_change=marcar_personalizado,
-            )
-            posicao_y = st.slider(
-                "Posição vertical",
-                min_value=10,
-                max_value=90,
-                key="personalizacao_y",
-                help="10% fica perto do topo; 90% fica perto da parte inferior.",
-                on_change=marcar_personalizado,
-            )
-        with direita:
-            st.markdown("**Estilo tipográfico**")
-            rotulo_fonte = st.selectbox(
-                "Fonte",
-                options=list(FONTES_EXIBICAO),
-                key="rotulo_fonte",
-                format_func=lambda opcao: opcao,
-                on_change=marcar_personalizado,
-                help="Escolha entre estilos modernos, clássicos e monoespaçados, com variações de peso e inclinação.",
-            )
-            fonte = FONTES_EXIBICAO[rotulo_fonte]
-            st.caption("As fontes são incorporadas como recursos padrão do PDF; não é preciso instalar nada.")
-            tamanho_fonte = st.slider(
-                "Tamanho da fonte",
-                min_value=12,
-                max_value=48,
-                key="personalizacao_tamanho",
-                help="Nomes compridos são reduzidos automaticamente para caber.",
-                on_change=marcar_personalizado,
-            )
-            cor_texto = st.color_picker(
-                "Cor do nome",
-                key="personalizacao_cor",
-                on_change=marcar_personalizado,
-            )
-
-    campos_extras = {}
-    if campos_selecionados:
-        with st.expander("Posição dos dados adicionais", expanded=False):
-            st.caption("Cada campo será centralizado na posição escolhida, usando a fonte e a cor do nome.")
-            for indice, campo in enumerate(campos_selecionados):
-                st.markdown(f"**{campo.replace('_', ' ').capitalize()}**")
-                chave_x = f"campo_extra_{campo}_x"
-                chave_y = f"campo_extra_{campo}_y"
-                st.session_state.setdefault(chave_x, 50)
-                st.session_state.setdefault(chave_y, min(90, 62 + indice * 8))
-                col_x, col_y = st.columns(2)
-                with col_x:
-                    st.slider("Posição horizontal (%)", 5, 95, key=chave_x, on_change=marcar_personalizado)
-                with col_y:
-                    st.slider("Posição vertical (%)", 5, 95, key=chave_y, on_change=marcar_personalizado)
-                campos_extras[campo] = {
-                    "x": st.session_state[chave_x],
-                    "y": st.session_state[chave_y],
-                    "fonte": fonte,
-                    "tamanho": max(10, tamanho_fonte - 5),
-                    "cor": cor_texto,
-                }
-
-    if arquivo_pdf:
-        try:
-            imagem_editor = imagem_primeira_pagina(arquivo_pdf.getvalue())
-            areas_editor = {"nome": (posicao_x, posicao_y)}
-            areas_editor.update({campo: (ajuste["x"], ajuste["y"]) for campo, ajuste in campos_extras.items()})
-            resumo_pdf, avisos_pdf = diagnosticar_area_pdf(arquivo_pdf.getvalue(), areas_editor)
-            st.caption(f"PDF validado · {resumo_pdf}")
-            for aviso_pdf in avisos_pdf:
-                st.warning(aviso_pdf)
-            valor_editor = editor_posicao(
-                imagem=imagem_editor,
-                nome=amostra[0][coluna_nome] if amostra else "Nome do participante",
-                x=posicao_x,
-                y=posicao_y,
-                tamanho=tamanho_fonte,
-                cor=cor_texto,
-                fonte=fonte,
-                chave="editor-posicao-certificado",
-                on_change=marcar_personalizado,
-            )
-            if valor_editor and valor_editor.get("nonce") != st.session_state.get("editor_posicao_nonce"):
-                st.session_state["editor_posicao_nonce"] = valor_editor.get("nonce")
-                st.session_state["personalizacao_x"] = int(valor_editor["x"])
-                st.session_state["personalizacao_y"] = int(valor_editor["y"])
-                posicao_x = st.session_state["personalizacao_x"]
-                posicao_y = st.session_state["personalizacao_y"]
-        except Exception as error:
-            st.error(f"Não foi possível abrir o PDF no editor: {error}")
+    with previa_coluna:
+        if arquivo_pdf:
+            try:
+                st.markdown('<div class="live-preview-title">Prévia interativa</div>', unsafe_allow_html=True)
+                st.caption("Arraste o nome na página ou ajuste a posição pelos controles.")
+                imagem_editor = imagem_primeira_pagina(arquivo_pdf.getvalue())
+                areas_editor = {"nome": (posicao_x, posicao_y)}
+                areas_editor.update({campo: (ajuste["x"], ajuste["y"]) for campo, ajuste in campos_extras.items()})
+                resumo_pdf, avisos_pdf = diagnosticar_area_pdf(arquivo_pdf.getvalue(), areas_editor)
+                st.caption(f"PDF validado · {resumo_pdf}")
+                for aviso_pdf in avisos_pdf:
+                    st.warning(aviso_pdf)
+                valor_editor = editor_posicao(
+                    imagem=imagem_editor,
+                    nome=amostra[0][coluna_nome] if amostra else "Nome do participante",
+                    x=posicao_x,
+                    y=posicao_y,
+                    tamanho=tamanho_fonte,
+                    cor=cor_texto,
+                    fonte=fonte,
+                    chave="editor-posicao-certificado",
+                    on_change=marcar_personalizado,
+                )
+                if valor_editor and valor_editor.get("nonce") != st.session_state.get("editor_posicao_nonce"):
+                    st.session_state["editor_posicao_nonce"] = valor_editor.get("nonce")
+                    st.session_state["personalizacao_x"] = int(valor_editor["x"])
+                    st.session_state["personalizacao_y"] = int(valor_editor["y"])
+                    posicao_x = st.session_state["personalizacao_x"]
+                    posicao_y = st.session_state["personalizacao_y"]
+            except Exception as error:
+                st.error(f"Não foi possível abrir o PDF no editor: {error}")
+        else:
+            st.info("Envie uma planilha e um modelo PDF para visualizar a prévia interativa.")
 else:
     st.info("No PowerPoint, os nomes e demais dados seguem a posicao dos marcadores no proprio modelo.")
 
@@ -897,9 +942,9 @@ if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
                     qr_previa,
                     qr_posicao,
                 )
-        with st.container(border=True):
-            st.markdown('<div class="section-title">Veja o resultado antes de gerar</div>', unsafe_allow_html=True)
-            st.caption("A prévia acompanha os ajustes de posição, tipografia e cor escolhidos acima.")
+        with previa_coluna.container(border=True):
+            st.markdown('<div class="section-title">Prévia final do certificado</div>', unsafe_allow_html=True)
+            st.caption("Confira também os dados e elementos visuais antes de gerar o lote.")
             with st.expander("Prévia do primeiro certificado", expanded=True):
                 dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
                 st.iframe(

@@ -403,7 +403,7 @@ class WebAppTests(unittest.TestCase):
         app.slider[0].set_value(42).run()
         self.assertNotEqual(app.session_state["pdf_previa"], previa_inicial)
 
-        app.button[0].click().run()
+        next(botao for botao in app.button if botao.label == "Gerar certificados").click().run()
 
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get("download_button")), 5)
@@ -428,7 +428,7 @@ class WebAppTests(unittest.TestCase):
         uploaders[1].set_value(("modelo.pptx", presentation_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.presentationml.presentation"))
         app.run()
         self.assertEqual(len(app.exception), 0)
-        app.button[0].click().run()
+        next(botao for botao in app.button if botao.label == "Gerar certificados").click().run()
 
         self.assertEqual(len(app.exception), 0)
         saida = app.session_state["zip_certificados"]
@@ -459,7 +459,7 @@ class WebAppTests(unittest.TestCase):
             uploaders[0].set_value(("participantes.xlsx", workbook_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             uploaders[1].set_value(("modelo.pdf", pdf_buffer.getvalue(), "application/pdf"))
             app.run()
-            app.button[0].click().run()
+            next(botao for botao in app.button if botao.label == "Gerar certificados").click().run()
 
         self.assertEqual(len(app.exception), 0)
         pdf = PdfReader(BytesIO(app.session_state["pdf_unico"]))
