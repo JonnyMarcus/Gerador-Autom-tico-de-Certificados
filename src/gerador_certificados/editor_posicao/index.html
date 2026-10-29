@@ -1,0 +1,106 @@
+﻿<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 8px; font: 13px system-ui, sans-serif; color: #526078; background: transparent; }
+  .hint { margin: 0 0 8px; }
+  .stage { position: relative; width: 100%; overflow: hidden; border: 1px solid #dfe5ef; border-radius: 12px; background: #f3f5f9; cursor: grab; touch-action: none; }
+  .stage.dragging { cursor: grabbing; }
+  img { display: block; width: 100%; height: auto; user-select: none; pointer-events: none; }
+  canvas { position: absolute; inset: 0; width: 100%; height: 100%; touch-action: none; }
+</style>
+</head>
+<body>
+<p class="hint">Arraste o nome no certificado para ajustar a posição. Use os controles abaixo para ajustes precisos.</p>
+<div class="stage"><img id="page" alt="Primeira página do certificado"><canvas id="overlay"></canvas></div>
+<script>
+  const stage = document.querySelector('.stage');
+  const image = document.querySelector('#page');
+  const canvas = document.querySelector('#overlay');
+  const ctx = canvas.getContext('2d');
+  let args = null;
+  let position = {x: 50, y: 51};
+  let dragging = false;
+  function family(name) {
+    if (name === 'GreatVibes') return 'GreatVibes, cursive';
+    if (name.startsWith('Times')) return 'Georgia, serif';
+    if (name.startsWith('Courier')) return 'monospace';
+    return 'Arial, sans-serif';
+  }
+  function draw() {
+    if (!image.naturalWidth) return;
+    const ratio = image.naturalWidth / image.naturalHeight;
+    const width = Math.max(1, Math.round(stage.clientWidth));
+    const height = Math.round(width / ratio);
+    canvas.width = width * devicePixelRatio;
+    canvas.height = height * devicePixelRatio;
+    canvas.style.height = `${height}px`;
+    ctx.setTransform(devicePixelRatio, 0, 0, devicePixelRatio, 0, 0);
+    ctx.clearRect(0, 0, width, height);
+    const px = position.x / 100 * width;
+    const py = position.y / 100 * height;
+    const size = Math.max(10, args.tamanho * width / image.naturalWidth * 1.55);
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.font = `${size}px ${family(args.fonte || '')}`;
+    ctx.fillStyle = args.cor || '#17233c';
+    ctx.shadowColor = 'rgba(255,255,255,.42)';
+    ctx.shadowBlur = 2;
+    ctx.fillText(args.nome || 'Nome do participante', px, py, width * .84);
+    setFrameHeight();
+  }
+  function send() {
+    window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:setComponentValue', dataType: 'json', value: {...position, nonce: `${Date.now()}-${Math.random()}`}}, '*');
+  }
+  function setFrameHeight() {
+    window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:setFrameHeight', height: Math.ceil(document.body.scrollHeight)}, '*');
+  }
+  function notifyReady() {
+    window.parent.postMessage({isStreamlitMessage: true, type: 'streamlit:componentReady', apiVersion: 1}, '*');
+  }
+  window.addEventListener('message', event => {
+    const message = event.data;
+    if (!message || message.type !== 'streamlit:render') return;
+    args = message.args;
+    position = {x: Number(args.x), y: Number(args.y)};
+    if (args.fonte === 'GreatVibes' && !window.greatVibesLoaded) {
+      const fonte = new FontFace('GreatVibes', "url('./GreatVibes-Regular.ttf')");
+      fonte.load().then(carregada => { document.fonts.add(carregada); window.greatVibesLoaded = true; draw(); });
+    }
+    if (image.src !== args.imagem) image.src = args.imagem;
+    draw();
+  });
+  image.addEventListener('load', draw);
+  new ResizeObserver(() => { draw(); setFrameHeight(); }).observe(stage);
+  function move(event) {
+    if (!dragging || !args) return;
+    const rect = canvas.getBoundingClientRect();
+    position = {
+      x: Math.round(Math.max(10, Math.min(90, (event.clientX - rect.left) / rect.width * 100))),
+      y: Math.round(Math.max(10, Math.min(90, (event.clientY - rect.top) / rect.height * 100)))
+    };
+    draw();
+  }
+  canvas.addEventListener('pointerdown', event => {
+    if (!args) return;
+    dragging = true;
+    stage.classList.add('dragging');
+    canvas.setPointerCapture(event.pointerId);
+    move(event);
+  });
+  canvas.addEventListener('pointermove', move);
+  canvas.addEventListener('pointerup', event => {
+    if (!dragging) return;
+    move(event);
+    dragging = false;
+    stage.classList.remove('dragging');
+    send();
+  });
+  canvas.addEventListener('pointercancel', () => { dragging = false; stage.classList.remove('dragging'); });
+  notifyReady();
+</script>
+</body>
+</html>

@@ -146,6 +146,22 @@ class PdfTests(unittest.TestCase):
                     )[0]
                     self.assertIn("Rita Souza", PdfReader(arquivo).pages[0].extract_text())
 
+    def test_gera_fonte_manuscrita_e_campos_adicionais(self):
+        with TemporaryDirectory() as diretorio:
+            pasta = Path(diretorio)
+            modelo = pasta / "modelo.pdf"
+            self.criar_modelo(modelo)
+            arquivo = gerar_certificados_pdf(
+                modelo,
+                pasta / "saida",
+                [{"nome": "Rita Souza", "curso": "Primeiros Socorros"}],
+                fonte="GreatVibes",
+                campos_extras={"curso": {"x": 50, "y": 66, "fonte": "Helvetica-Bold", "tamanho": 18, "cor": "#17233C"}},
+            )[0]
+            texto = PdfReader(arquivo).pages[0].extract_text()
+            self.assertIn("Rita Souza", texto)
+            self.assertIn("Primeiros Socorros", texto)
+
     def test_nao_combina_lista_vazia(self):
         with self.assertRaisesRegex(ValueError, "Não há certificados"):
             combinar_certificados_pdf([])
@@ -265,8 +281,8 @@ class WebAppTests(unittest.TestCase):
     def test_upload_e_geracao_disponibilizam_as_duas_opcoes_de_download(self):
         workbook_buffer = BytesIO()
         workbook = Workbook()
-        workbook.active.append(["nome"])
-        workbook.active.append(["Ana Souza"])
+        workbook.active.append(["nome", "curso"])
+        workbook.active.append(["Ana Souza", "Primeiros Socorros"])
         workbook.save(workbook_buffer)
 
         pdf_buffer = BytesIO()
@@ -282,14 +298,17 @@ class WebAppTests(unittest.TestCase):
         app.run()
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(len(app.get("iframe")), 2)
+        app.multiselect[0].set_value(["curso"]).run()
+        self.assertEqual(len(app.exception), 0)
         previa_inicial = app.session_state["pdf_previa"]
+        self.assertIn("Primeiros Socorros", PdfReader(BytesIO(previa_inicial)).pages[0].extract_text())
         app.slider[0].set_value(42).run()
         self.assertNotEqual(app.session_state["pdf_previa"], previa_inicial)
 
         app.button[0].click().run()
 
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(len(app.get("download_button")), 2)
+        self.assertEqual(len(app.get("download_button")), 4)
 
 
 class NomeSeguroTests(unittest.TestCase):

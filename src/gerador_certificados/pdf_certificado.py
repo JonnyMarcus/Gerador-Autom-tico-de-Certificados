@@ -5,6 +5,8 @@ from pathlib import Path
 from pypdf import PdfReader, PdfWriter
 from reportlab.lib.colors import HexColor
 from reportlab.pdfbase.pdfmetrics import stringWidth
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
 
 from .exportador import nome_seguro
@@ -22,7 +24,12 @@ FONTES_PDF = (
     "Courier-Bold",
     "Courier-Oblique",
     "Courier-BoldOblique",
+    "GreatVibes",
 )
+
+_FONTE_MANUSCRITA = Path(__file__).resolve().parent / "editor_posicao" / "GreatVibes-Regular.ttf"
+if _FONTE_MANUSCRITA.is_file() and "GreatVibes" not in pdfmetrics.getRegisteredFontNames():
+    pdfmetrics.registerFont(TTFont("GreatVibes", str(_FONTE_MANUSCRITA)))
 
 
 def _sobreposicao_nome(
@@ -34,6 +41,7 @@ def _sobreposicao_nome(
     fonte: str,
     tamanho_fonte: float,
     cor: str,
+    campos: dict[str, dict[str, float | str]] | None = None,
 ) -> PdfReader:
     buffer = BytesIO()
     desenho = canvas.Canvas(buffer, pagesize=(largura, altura), pageCompression=1)
@@ -45,6 +53,20 @@ def _sobreposicao_nome(
     x = largura * posicao_x / 100
     y = altura * (100 - posicao_y) / 100
     desenho.drawCentredString(x, y, nome)
+    for campo, ajuste in (campos or {}).items():
+        valor = str(ajuste.get("valor", "")).strip()
+        if not valor:
+            continue
+        fonte_campo = str(ajuste.get("fonte", fonte))
+        tamanho_campo = float(ajuste.get("tamanho", max(10, tamanho_fonte - 4)))
+        largura_maxima = largura * 0.84
+        while tamanho_campo > 8 and stringWidth(valor, fonte_campo, tamanho_campo) > largura_maxima:
+            tamanho_campo -= 1
+        desenho.setFont(fonte_campo, tamanho_campo)
+        desenho.setFillColor(HexColor(str(ajuste.get("cor", cor))))
+        x_campo = largura * float(ajuste.get("x", 50)) / 100
+        y_campo = altura * (100 - float(ajuste.get("y", 62))) / 100
+        desenho.drawCentredString(x_campo, y_campo, valor)
     desenho.save()
     buffer.seek(0)
     return PdfReader(buffer)
@@ -61,6 +83,7 @@ def gerar_certificados_pdf(
     tamanho_fonte: float = 32,
     cor: str = "#17233C",
     ao_gerar: Callable[[int, int], None] | None = None,
+    campos_extras: dict[str, dict[str, float | str]] | None = None,
 ) -> list[Path]:
     """Aplica cada nome à primeira página do PDF, usando coordenadas percentuais."""
     if not modelo.is_file():
@@ -97,6 +120,10 @@ def gerar_certificados_pdf(
             fonte,
             tamanho_fonte,
             cor,
+            {
+                campo: {**ajuste, "valor": participante.get(campo, "")}
+                for campo, ajuste in (campos_extras or {}).items()
+            },
         )
         primeira_pagina.merge_page(camada_nome.pages[0])
 

@@ -11,6 +11,11 @@ import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
 
 import streamlit as st
+import pymupdf as fitz
+from openpyxl import Workbook
+from reportlab.lib.colors import HexColor
+from reportlab.lib.pagesizes import landscape, A4
+from reportlab.pdfgen import canvas as pdf_canvas
 
 # O Streamlit Cloud executa app.py na raiz; o pacote da aplicação fica em src/.
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
@@ -21,6 +26,7 @@ from gerador_certificados.pdf_certificado import (
     gerar_certificados_pdf,
 )
 from gerador_certificados.validacao import validar_participantes
+from gerador_certificados.posicao_component import editor_posicao
 
 
 st.set_page_config(page_title="Certifica | Gerador de certificados", page_icon="🎓", layout="wide")
@@ -42,6 +48,7 @@ FONTES_EXIBICAO = {
     "Monoespaçada · negrito": "Courier-Bold",
     "Monoespaçada · itálico": "Courier-Oblique",
     "Monoespaçada · negrito itálico": "Courier-BoldOblique",
+    "Manuscrita · Great Vibes": "GreatVibes",
 }
 ESTILOS = {
     "Moderno": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 32, "cor": "#17233C"},
@@ -60,12 +67,13 @@ def criar_zip(arquivos: list[Path]) -> bytes:
 
 def gerar_previa_pdf(
     modelo_pdf: bytes,
-    nome: str,
+    participante: dict[str, str],
     posicao_x: int,
     posicao_y: int,
     fonte: str,
     tamanho_fonte: int,
     cor: str,
+    campos_extras: dict[str, dict[str, float | str]] | None = None,
 ) -> bytes:
     with tempfile.TemporaryDirectory(prefix="certificados_previa_") as diretorio:
         pasta = Path(diretorio)
@@ -74,14 +82,110 @@ def gerar_previa_pdf(
         arquivo = gerar_certificados_pdf(
             modelo,
             pasta / "saida",
-            [{"nome": nome}],
+            [participante],
             posicao_x=posicao_x,
             posicao_y=posicao_y,
             fonte=fonte,
             tamanho_fonte=tamanho_fonte,
             cor=cor,
+            campos_extras=campos_extras,
         )[0]
         return arquivo.read_bytes()
+
+
+def imagem_primeira_pagina(pdf: bytes) -> str:
+    """Renderiza a primeira página para o editor visual de posição."""
+    documento = fitz.open(stream=pdf, filetype="pdf")
+    try:
+        if documento.needs_pass:
+            raise ValueError("O PDF está protegido por senha. Envie uma cópia desbloqueada.")
+        if not documento.page_count:
+            raise ValueError("O PDF não contém páginas.")
+        pagina = documento[0]
+        if pagina.rect.width < 100 or pagina.rect.height < 100:
+            raise ValueError("A primeira página do PDF tem dimensões muito pequenas.")
+        escala = min(1.35, 1400 / max(pagina.rect.width, pagina.rect.height))
+        pixmap = pagina.get_pixmap(matrix=fitz.Matrix(escala, escala), alpha=False)
+        return "data:image/png;base64," + base64.b64encode(pixmap.tobytes("png")).decode("ascii")
+    finally:
+        documento.close()
+
+
+def diagnosticar_area_pdf(pdf: bytes, areas: dict[str, tuple[float, float]]) -> tuple[str, list[str]]:
+    """Resume a página e sinaliza texto detectável perto das posições de impressão."""
+    documento = fitz.open(stream=pdf, filetype="pdf")
+    try:
+        if documento.needs_pass:
+            raise ValueError("O PDF está protegido por senha. Envie uma cópia desbloqueada.")
+        if not documento.page_count:
+            raise ValueError("O PDF não contém páginas.")
+        pagina = documento[0]
+        largura, altura = pagina.rect.width, pagina.rect.height
+        resumo = f"{documento.page_count} página(s) · primeira página {largura:.0f} × {altura:.0f} pt"
+        palavras = pagina.get_text("words")
+        avisos = []
+        for rotulo, (x, y) in areas.items():
+            centro_y = altura * y / 100
+            tolerancia_y = max(16, altura * 0.035)
+            tem_texto = any(
+                palavra[0] < largura * 0.92
+                and palavra[2] > largura * 0.08
+                and palavra[1] <= centro_y + tolerancia_y
+                and palavra[3] >= centro_y - tolerancia_y
+                for palavra in palavras
+            )
+            if tem_texto:
+                avisos.append(
+                    f"Há texto selecionável próximo à área de {rotulo} (vertical {y:.0f}%). "
+                    "Confira a prévia e mova o campo se houver sobreposição."
+                )
+        return resumo, avisos
+    finally:
+        documento.close()
+
+
+def criar_planilha_exemplo() -> bytes:
+    arquivo = BytesIO()
+    pasta = Workbook()
+    planilha = pasta.active
+    planilha.title = "Participantes"
+    planilha.append(["nome", "curso", "carga_horaria", "data"])
+    planilha.append(["Ana Souza", "Primeiros Socorros", "8 horas", "28/10/2026"])
+    planilha.append(["João Lima", "Primeiros Socorros", "8 horas", "28/10/2026"])
+    for coluna, largura in {"A": 28, "B": 32, "C": 20, "D": 18}.items():
+        planilha.column_dimensions[coluna].width = largura
+    pasta.save(arquivo)
+    return arquivo.getvalue()
+
+
+def criar_pdf_exemplo() -> bytes:
+    arquivo = BytesIO()
+    largura, altura = landscape(A4)
+    pdf = pdf_canvas.Canvas(arquivo, pagesize=(largura, altura))
+    pdf.setFillColor(HexColor("#FBFAF6"))
+    pdf.rect(0, 0, largura, altura, stroke=0, fill=1)
+    pdf.setStrokeColor(HexColor("#B89A5A"))
+    pdf.setLineWidth(2)
+    pdf.roundRect(24, 24, largura - 48, altura - 48, 14, stroke=1, fill=0)
+    pdf.setLineWidth(.6)
+    pdf.roundRect(34, 34, largura - 68, altura - 68, 10, stroke=1, fill=0)
+    pdf.setFillColor(HexColor("#25314A"))
+    pdf.setFont("Times-Bold", 30)
+    pdf.drawCentredString(largura / 2, altura * .75, "CERTIFICADO DE CONCLUSÃO")
+    pdf.setFillColor(HexColor("#66748B"))
+    pdf.setFont("Helvetica", 13)
+    pdf.drawCentredString(largura / 2, altura * .64, "Certificamos que")
+    pdf.setStrokeColor(HexColor("#D7C79F"))
+    pdf.line(largura * .18, altura * .48, largura * .82, altura * .48)
+    pdf.setFillColor(HexColor("#8A7955"))
+    pdf.setFont("Helvetica-Oblique", 10)
+    pdf.drawCentredString(largura / 2, altura * .44, "A área central está livre para nome e dados personalizados")
+    pdf.setFillColor(HexColor("#66748B"))
+    pdf.setFont("Helvetica", 10)
+    pdf.drawString(largura * .2, altura * .2, "Responsável")
+    pdf.drawRightString(largura * .8, altura * .2, "Data")
+    pdf.save()
+    return arquivo.getvalue()
 
 
 st.markdown(
@@ -175,6 +279,24 @@ with st.expander("Antes de começar · confira o formato dos arquivos", expanded
         """
     )
 
+modelo_coluna, certificado_coluna = st.columns(2)
+with modelo_coluna:
+    st.download_button(
+        "Baixar modelo de planilha (.xlsx)",
+        data=criar_planilha_exemplo(),
+        file_name="modelo_participantes.xlsx",
+        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        width="stretch",
+    )
+with certificado_coluna:
+    st.download_button(
+        "Baixar certificado de exemplo (.pdf)",
+        data=criar_pdf_exemplo(),
+        file_name="certificado_exemplo.pdf",
+        mime="application/pdf",
+        width="stretch",
+    )
+
 uploaded_count = 0
 
 left_step, right_step = st.columns(2)
@@ -207,6 +329,53 @@ for indice, (numero, texto, concluido) in enumerate(status_steps):
     )
 
 coluna_nome = "nome"
+amostra = []
+erro_dados = None
+if arquivo_planilha:
+    try:
+        with tempfile.TemporaryDirectory(prefix="certificados_lista_") as diretorio:
+            caminho_planilha = Path(diretorio) / "participantes.xlsx"
+            caminho_planilha.write_bytes(arquivo_planilha.getvalue())
+            amostra = ler_participantes(caminho_planilha)
+        if amostra:
+            st.markdown(
+                f'<div class="section-title">Prévia da planilha '
+                f'<span style="color:#5148e5;font-size:.9rem">· {len(amostra)} participantes</span></div>',
+                unsafe_allow_html=True,
+            )
+            st.dataframe(amostra[:10], width="stretch", hide_index=True)
+            contagem_nomes = {}
+            for indice, participante in enumerate(amostra, start=2):
+                chave_nome = participante.get(coluna_nome, "").strip().casefold()
+                if chave_nome:
+                    contagem_nomes.setdefault(chave_nome, []).append(indice)
+            repetidos = [linhas for linhas in contagem_nomes.values() if len(linhas) > 1]
+            if repetidos:
+                linhas_repetidas = ", ".join(str(linha) for linhas in repetidos for linha in linhas)
+                st.warning(
+                    f"Há nomes repetidos nas linhas {linhas_repetidas}. "
+                    "A geração continuará; confira se as repetições são intencionais."
+                )
+    except (ValueError, OSError, KeyError) as error:
+        erro_dados = str(error)
+        st.error(f"Não foi possível ler a planilha: {error}")
+
+campos_disponiveis = [campo for campo in amostra[0] if campo != coluna_nome] if amostra else []
+st.session_state["campos_extras_selecionados"] = [
+    campo for campo in st.session_state.get("campos_extras_selecionados", []) if campo in campos_disponiveis
+]
+campos_selecionados = st.multiselect(
+    "Dados adicionais para imprimir no certificado",
+    options=campos_disponiveis,
+    help="Escolha colunas como curso, carga_horaria ou data. Depois ajuste a posição de cada uma.",
+    key="campos_extras_selecionados",
+)
+if amostra and campos_selecionados:
+    try:
+        validar_participantes(amostra, coluna_nome, campos_selecionados)
+    except ValueError as error:
+        erro_dados = str(error)
+        st.error(f"Confira os dados selecionados: {error}")
 
 def marcar_personalizado() -> None:
     st.session_state["estilo_personalizacao"] = "Personalizado"
@@ -287,6 +456,58 @@ with st.expander("Personalize o nome", expanded=True):
             on_change=marcar_personalizado,
         )
 
+campos_extras = {}
+if campos_selecionados:
+    with st.expander("Posição dos dados adicionais", expanded=False):
+        st.caption("Cada campo será centralizado na posição escolhida, usando a fonte e a cor do nome.")
+        for indice, campo in enumerate(campos_selecionados):
+            st.markdown(f"**{campo.replace('_', ' ').capitalize()}**")
+            chave_x = f"campo_extra_{campo}_x"
+            chave_y = f"campo_extra_{campo}_y"
+            st.session_state.setdefault(chave_x, 50)
+            st.session_state.setdefault(chave_y, min(90, 62 + indice * 8))
+            col_x, col_y = st.columns(2)
+            with col_x:
+                st.slider("Posição horizontal (%)", 5, 95, key=chave_x, on_change=marcar_personalizado)
+            with col_y:
+                st.slider("Posição vertical (%)", 5, 95, key=chave_y, on_change=marcar_personalizado)
+            campos_extras[campo] = {
+                "x": st.session_state[chave_x],
+                "y": st.session_state[chave_y],
+                "fonte": fonte,
+                "tamanho": max(10, tamanho_fonte - 5),
+                "cor": cor_texto,
+            }
+
+if arquivo_pdf:
+    try:
+        imagem_editor = imagem_primeira_pagina(arquivo_pdf.getvalue())
+        areas_editor = {"nome": (posicao_x, posicao_y)}
+        areas_editor.update({campo: (ajuste["x"], ajuste["y"]) for campo, ajuste in campos_extras.items()})
+        resumo_pdf, avisos_pdf = diagnosticar_area_pdf(arquivo_pdf.getvalue(), areas_editor)
+        st.caption(f"PDF validado · {resumo_pdf}")
+        for aviso_pdf in avisos_pdf:
+            st.warning(aviso_pdf)
+        valor_editor = editor_posicao(
+            imagem=imagem_editor,
+            nome=amostra[0][coluna_nome] if amostra else "Nome do participante",
+            x=posicao_x,
+            y=posicao_y,
+            tamanho=tamanho_fonte,
+            cor=cor_texto,
+            fonte=fonte,
+            chave="editor-posicao-certificado",
+            on_change=marcar_personalizado,
+        )
+        if valor_editor and valor_editor.get("nonce") != st.session_state.get("editor_posicao_nonce"):
+            st.session_state["editor_posicao_nonce"] = valor_editor.get("nonce")
+            st.session_state["personalizacao_x"] = int(valor_editor["x"])
+            st.session_state["personalizacao_y"] = int(valor_editor["y"])
+            posicao_x = st.session_state["personalizacao_x"]
+            posicao_y = st.session_state["personalizacao_y"]
+    except Exception as error:
+        st.error(f"Não foi possível abrir o PDF no editor: {error}")
+
 st.caption(
     f"Limites desta versão: planilha até {MAX_XLSX_MB} MB, PDF até {MAX_PDF_MB} MB, "
     f"até {MAX_PARTICIPANTES} participantes e saída estimada até {MAX_SAIDA_ESTIMADA_BYTES // (1024 * 1024)} MB."
@@ -299,6 +520,10 @@ fingerprint = (
     fonte,
     tamanho_fonte,
     cor_texto,
+    tuple(
+        (campo, tuple(sorted(ajuste.items())))
+        for campo, ajuste in sorted(campos_extras.items())
+    ),
     sha256(arquivo_planilha.getvalue()).hexdigest() if arquivo_planilha else None,
     sha256(arquivo_pdf.getvalue()).hexdigest() if arquivo_pdf else None,
 )
@@ -309,30 +534,19 @@ if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("total_certificados", None)
     st.session_state["fingerprint"] = fingerprint
 
-amostra = []
-if arquivo_planilha:
-    try:
-        with tempfile.TemporaryDirectory(prefix="certificados_preview_") as diretorio:
-            caminho_planilha = Path(diretorio) / "participantes.xlsx"
-            caminho_planilha.write_bytes(arquivo_planilha.getvalue())
-            amostra = ler_participantes(caminho_planilha)
-        st.markdown(f'<div class="section-title">Prévia da planilha <span style="color:#5148e5;font-size:.9rem">· {len(amostra)} participantes</span></div>', unsafe_allow_html=True)
-        st.dataframe(amostra[:10], width="stretch", hide_index=True)
-    except (ValueError, OSError, KeyError) as error:
-        st.error(f"Não foi possível ler a planilha: {error}")
-
 if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
     try:
         with st.spinner("Preparando prévia com o primeiro participante…"):
             if "pdf_previa" not in st.session_state:
                 st.session_state["pdf_previa"] = gerar_previa_pdf(
                     arquivo_pdf.getvalue(),
-                    amostra[0][coluna_nome],
+                    amostra[0],
                     posicao_x,
                     posicao_y,
                     fonte,
                     tamanho_fonte,
                     cor_texto,
+                    campos_extras,
                 )
         with st.expander("Prévia do primeiro certificado", expanded=True):
             dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
@@ -358,13 +572,14 @@ if st.button("✦  Gerar certificados", type="primary", width="stretch"):
                 caminho_pdf.write_bytes(arquivo_pdf.getvalue())
 
                 participantes = ler_participantes(caminho_planilha)
-                validar_participantes(participantes, coluna_nome, campos=[])
+                validar_participantes(participantes, coluna_nome, campos=campos_selecionados)
                 if len(participantes) > MAX_PARTICIPANTES:
                     raise ValueError(
                         f"O limite é {MAX_PARTICIPANTES} participantes por geração; "
                         f"a planilha contém {len(participantes)}."
                     )
-                saida_estimada = len(participantes) * arquivo_pdf.size
+                sobrecarga_por_certificado = 64 * 1024 if fonte == "GreatVibes" else 8 * 1024
+                saida_estimada = len(participantes) * (arquivo_pdf.size + sobrecarga_por_certificado)
                 if saida_estimada > MAX_SAIDA_ESTIMADA_BYTES:
                     limite_mb = MAX_SAIDA_ESTIMADA_BYTES // (1024 * 1024)
                     raise ValueError(
@@ -389,6 +604,7 @@ if st.button("✦  Gerar certificados", type="primary", width="stretch"):
                         tamanho_fonte=tamanho_fonte,
                         cor=cor_texto,
                         ao_gerar=atualizar_progresso,
+                        campos_extras=campos_extras,
                     )
                 finally:
                     progresso.empty()
