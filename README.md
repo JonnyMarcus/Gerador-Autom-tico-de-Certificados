@@ -35,6 +35,8 @@ A interface limita a planilha a 5 MB, o certificado a 10 MB, a geração a 500 p
 
 Para ativar QR Codes assinados, configure `qr_secret` nos Secrets do Streamlit Cloud com pelo menos 32 caracteres aleatórios e `public_url` com o endereço público do app. Gere a chave com `python -c "import secrets; print(secrets.token_hex(32))"`. Mantenha a mesma chave para validar os QR Codes já emitidos; trocar a chave invalida as assinaturas anteriores. O QR contém o nome, a data e os campos extras escolhidos. Uma configuração local de exemplo está em `.streamlit/secrets.toml.example`.
 
+O envio opcional dos certificados individuais por e-mail usa SMTP e não adiciona dependências externas. Marque a opção de envio na interface, selecione a coluna de e-mail e confira a lista; o app valida todos os endereços e só envia depois da confirmação explícita. Configure `smtp_host`, `smtp_port`, `smtp_username`, `smtp_password`, `email_from`, `smtp_use_ssl` e `smtp_starttls` nos Secrets do Streamlit Cloud (ou use variáveis de ambiente com prefixo `CERTIFICA_`, como `CERTIFICA_SMTP_HOST`). Use uma senha de aplicativo ou credencial SMTP própria do provedor. Nunca envie credenciais reais ao repositório. Sem SMTP configurado, a geração e o download continuam disponíveis.
+
 Para executar localmente:
 
 ```bash

@@ -38,6 +38,7 @@ from gerador_certificados.exportador import nome_seguro
 from gerador_certificados.certificado import preencher_modelo
 from gerador_certificados.seguranca_qr import gerar_link_verificacao, verificar_link_verificacao
 from gerador_certificados.certificado import campos_modelo
+from gerador_certificados.emailer import enviar_lote_smtp, validar_email
 
 
 st.set_page_config(page_title="Certifica | Gerador de certificados", page_icon="🎓", layout="wide")
@@ -75,9 +76,11 @@ ESTILOS = {
 def obter_configuracao_qr(chave: str, padrao: str = "") -> str:
     try:
         valor = st.secrets.get(chave, padrao)
-        return str(valor) if valor else padrao
     except Exception:
-        return os.environ.get(f"CERTIFICA_{chave.upper()}", padrao)
+        valor = None
+    if valor:
+        return str(valor)
+    return os.environ.get(f"CERTIFICA_{chave.upper()}", padrao)
 
 
 def criar_qr_png(dados: dict[str, object], segredo: str, url_publica: str) -> bytes:
@@ -137,10 +140,43 @@ def guardar_no_historico(formato: str, quantidade: int, arquivo_zip: bytes) -> N
     st.session_state["historico_emissoes"] = historico[:3]
 
 
+def obter_config_smtp() -> tuple[dict[str, object], str | None]:
+    host = obter_configuracao_qr("smtp_host")
+    remetente = obter_configuracao_qr("email_from")
+    usuario = obter_configuracao_qr("smtp_username")
+    senha = obter_configuracao_qr("smtp_password")
+    try:
+        porta = int(obter_configuracao_qr("smtp_port", "465" if obter_configuracao_qr("smtp_use_ssl").lower() in {"1", "true", "yes"} else "587"))
+    except ValueError:
+        return {}, "A porta SMTP configurada precisa ser um número entre 1 e 65535."
+    if not 1 <= porta <= 65535:
+        return {}, "A porta SMTP configurada precisa estar entre 1 e 65535."
+    ssl_ativo = obter_configuracao_qr("smtp_use_ssl").lower() in {"1", "true", "yes"}
+    starttls_ativo = obter_configuracao_qr("smtp_starttls", "true").lower() not in {"0", "false", "no"}
+    config = {
+        "host": host,
+        "port": porta,
+        "username": usuario,
+        "password": senha,
+        "from_email": remetente or usuario,
+        "use_ssl": ssl_ativo,
+        "starttls": starttls_ativo,
+    }
+    if not host or not config["from_email"]:
+        return config, None
+    if usuario and not senha:
+        return config, "O SMTP tem usuário configurado, mas falta a senha nos Secrets."
+    if not validar_email(str(config["from_email"])):
+        return config, "O remetente SMTP precisa ser um endereço de e-mail válido."
+    return config, None
+
+
 SEGREDO_QR = obter_configuracao_qr("qr_secret")
 URL_PUBLICA_QR = obter_configuracao_qr(
     "public_url", "https://arpalq47szetr6bwvpxtzy.streamlit.app"
 )
+CONFIG_SMTP, ERRO_CONFIG_SMTP = obter_config_smtp()
+SMTP_PRONTO = bool(CONFIG_SMTP.get("host") and CONFIG_SMTP.get("from_email") and not ERRO_CONFIG_SMTP)
 TOKEN_VERIFICACAO = st.query_params.get("verificar")
 if TOKEN_VERIFICACAO:
     st.title("Verificação de certificado")
@@ -526,6 +562,57 @@ elif arquivo_pptx and amostra:
         erro_modelo_pptx = f"Não foi possível ler o modelo PowerPoint: {error}"
         st.error(erro_modelo_pptx)
 
+email_destinatarios = []
+email_valido_para_todos = False
+enviar_por_email = st.checkbox(
+    "Preparar o envio dos certificados por e-mail",
+    key="enviar_certificados_email",
+    help="Os certificados só serão enviados depois que você revisar os destinatários e confirmar o envio.",
+)
+coluna_email = None
+if enviar_por_email:
+    campos_email = [campo for campo in amostra[0] if campo != coluna_nome] if amostra else []
+    if not campos_email:
+        st.info("Envie uma planilha com uma coluna de e-mail para preparar os destinatários.")
+    else:
+        if st.session_state.get("coluna_email_certificados") not in campos_email:
+            st.session_state["coluna_email_certificados"] = "email" if "email" in campos_email else campos_email[0]
+        coluna_email = st.selectbox(
+            "Coluna com o e-mail dos participantes",
+            options=campos_email,
+            key="coluna_email_certificados",
+        )
+        linhas_invalidas = []
+        for numero_linha, participante in enumerate(amostra, start=2):
+            endereco = participante.get(coluna_email, "").strip()
+            if not validar_email(endereco):
+                linhas_invalidas.append(numero_linha)
+            else:
+                email_destinatarios.append({"nome": participante.get(coluna_nome, ""), "email": endereco})
+        if linhas_invalidas:
+            st.error(
+                f"Corrija os e-mails ausentes ou inválidos nas linhas {', '.join(map(str, linhas_invalidas))} "
+                "antes de habilitar o envio. A geração e o download dos certificados continuam disponíveis."
+            )
+        else:
+            email_valido_para_todos = len(email_destinatarios) == len(amostra) and bool(amostra)
+            st.dataframe(email_destinatarios, width="stretch", hide_index=True)
+            destinatarios_repetidos = {}
+            for item in email_destinatarios:
+                chave = item["email"].casefold()
+                destinatarios_repetidos[chave] = destinatarios_repetidos.get(chave, 0) + 1
+            if any(total > 1 for total in destinatarios_repetidos.values()):
+                st.warning("Há endereços repetidos. Cada participante receberá seu próprio certificado.")
+        if ERRO_CONFIG_SMTP:
+            st.error(ERRO_CONFIG_SMTP)
+        elif not SMTP_PRONTO:
+            st.info(
+                "Configure smtp_host, smtp_port, smtp_username, smtp_password e email_from "
+                "nos Secrets do Streamlit para habilitar o envio."
+            )
+        elif email_valido_para_todos:
+            st.caption(f"Pronto para preparar {len(email_destinatarios)} mensagens individuais; o envio ainda exigirá confirmação.")
+
 def marcar_personalizado() -> None:
     st.session_state["estilo_personalizacao"] = "Personalizado"
 
@@ -755,6 +842,10 @@ fingerprint = (
     ),
     qr_habilitado,
     tuple(sorted(qr_posicao.items())),
+    enviar_por_email,
+    coluna_email,
+    tuple((item["nome"], item["email"]) for item in email_destinatarios),
+    SMTP_PRONTO,
 )
 if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("zip_certificados", None)
@@ -762,6 +853,8 @@ if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("pdf_previa", None)
     st.session_state.pop("total_certificados", None)
     st.session_state.pop("formato_resultado", None)
+    st.session_state.pop("pendentes_email", None)
+    st.session_state.pop("email_enviados", None)
     st.session_state["fingerprint"] = fingerprint
 
 if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
@@ -870,6 +963,18 @@ if st.button("Gerar certificados", type="primary", width="stretch"):
                 st.session_state["total_certificados"] = len(arquivos)
                 st.session_state["formato_resultado"] = extensao
                 guardar_no_historico(extensao, len(arquivos), arquivo_zip)
+                if enviar_por_email and SMTP_PRONTO and email_valido_para_todos:
+                    st.session_state["pendentes_email"] = [
+                        {
+                            "nome": participante[coluna_nome],
+                            "email": destinatario["email"],
+                            "arquivo": arquivo.name,
+                            "status": "Pendente",
+                        }
+                        for participante, destinatario, arquivo in zip(
+                            participantes, email_destinatarios, arquivos
+                        )
+                    ]
         except (FileNotFoundError, ValueError, PermissionError, OSError) as error:
             st.error(f"Nao foi possivel gerar os certificados: {error}")
         except Exception as error:
@@ -894,6 +999,71 @@ if st.session_state.get("zip_certificados"):
             mime="application/pdf",
             width="stretch",
         )
+
+if st.session_state.get("pendentes_email"):
+    st.subheader("Revisar e confirmar o envio por e-mail")
+    pendentes_email = st.session_state["pendentes_email"]
+    st.dataframe(
+        [
+            {"Nome": item["nome"], "E-mail": item["email"], "Arquivo": item["arquivo"], "Status": item["status"]}
+            for item in pendentes_email
+        ],
+        width="stretch",
+        hide_index=True,
+    )
+    quantidade_a_enviar = sum(item["status"] != "Enviado" for item in pendentes_email)
+    if quantidade_a_enviar:
+        with st.form("confirmar_envio_certificados"):
+            confirmar_envio = st.checkbox(
+                f"Confirmo o envio de {quantidade_a_enviar} certificado(s) aos destinatários listados."
+            )
+            solicitou_envio = st.form_submit_button(
+                f"Enviar {quantidade_a_enviar} certificado(s) por e-mail",
+                type="primary",
+                width="stretch",
+            )
+        if solicitou_envio:
+            if not confirmar_envio:
+                st.error("Marque a confirmação antes de enviar.")
+            else:
+                mensagens = []
+                candidatos = [item for item in pendentes_email if item["status"] != "Enviado"]
+                try:
+                    with ZipFile(BytesIO(st.session_state["zip_certificados"])) as pacote:
+                        for item in candidatos:
+                            nome_seguro_email = " ".join(item["nome"].splitlines())[:120]
+                            if formato_resultado == "PDF":
+                                tipo_anexo = ("application", "pdf")
+                            else:
+                                tipo_anexo = (
+                                    "application",
+                                    "vnd.openxmlformats-officedocument.presentationml.presentation",
+                                )
+                            mensagens.append(
+                                {
+                                    "to": item["email"],
+                                    "subject": f"Seu certificado - {nome_seguro_email}",
+                                    "body": (
+                                        f"Olá {nome_seguro_email},\n\n"
+                                        "Segue em anexo o seu certificado.\n\n"
+                                        "Atenciosamente,\nCertifica"
+                                    ),
+                                    "filename": item["arquivo"],
+                                    "attachment": pacote.read(item["arquivo"]),
+                                    "maintype": tipo_anexo[0],
+                                    "subtype": tipo_anexo[1],
+                                }
+                            )
+                    with st.spinner("Enviando os certificados individuais…"):
+                        resultados_email = enviar_lote_smtp(CONFIG_SMTP, mensagens)
+                    for item, resultado in zip(candidatos, resultados_email):
+                        item["status"] = "Enviado" if resultado["ok"] else f"Falhou: {resultado['erro']}"
+                    st.session_state["pendentes_email"] = pendentes_email
+                    st.rerun()
+                except Exception as error:
+                    st.error(f"Não foi possível concluir o envio: {error}")
+    else:
+        st.success("Todos os certificados deste lote foram enviados.")
 
 if st.session_state.get("historico_emissoes"):
     st.subheader("Historico desta sessao")

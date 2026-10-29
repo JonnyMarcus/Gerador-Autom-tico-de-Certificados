@@ -5,7 +5,7 @@ import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 from zipfile import ZipFile
 
 from openpyxl import Workbook
@@ -28,6 +28,7 @@ from gerador_certificados.pdf_certificado import (
 from gerador_certificados.planilha import ler_participantes
 from gerador_certificados.validacao import validar_participantes
 from gerador_certificados.seguranca_qr import gerar_link_verificacao, verificar_link_verificacao
+from gerador_certificados.emailer import enviar_lote_smtp, validar_email
 
 
 class PlanilhaTests(unittest.TestCase):
@@ -275,6 +276,45 @@ class QrSecurityTests(unittest.TestCase):
         self.assertIsNone(verificar_link_verificacao(token[:-2] + "ab", segredo))
 
 
+class EmailerTests(unittest.TestCase):
+    def test_valida_enderecos_e_rejeita_header_injection(self):
+        self.assertTrue(validar_email("ana.souza@example.org"))
+        self.assertFalse(validar_email("ana@example"))
+        self.assertFalse(validar_email("ana@example.org\nBcc:evil@example.org"))
+
+    @patch("gerador_certificados.emailer.smtplib.SMTP")
+    def test_envia_anexo_individual_com_starttls(self, smtp_mock):
+        smtp = MagicMock()
+        smtp_mock.return_value.__enter__.return_value = smtp
+        smtp.send_message.return_value = {}
+        resultados = enviar_lote_smtp(
+            {
+                "host": "smtp.example.org",
+                "port": 587,
+                "username": "remetente@example.org",
+                "password": "segredo",
+                "from_email": "remetente@example.org",
+                "starttls": True,
+            },
+            [{
+                "to": "ana@example.org",
+                "subject": "Seu certificado",
+                "body": "Olá Ana",
+                "filename": "Ana.pdf",
+                "attachment": b"conteudo-pdf",
+                "maintype": "application",
+                "subtype": "pdf",
+            }],
+        )
+        self.assertEqual(resultados, [{"to": "ana@example.org", "ok": True, "erro": ""}])
+        smtp.starttls.assert_called_once()
+        smtp.login.assert_called_once_with("remetente@example.org", "segredo")
+        mensagem = smtp.send_message.call_args.args[0]
+        self.assertEqual(mensagem["To"], "ana@example.org")
+        anexo = next(mensagem.iter_attachments())
+        self.assertEqual(anexo.get_filename(), "Ana.pdf")
+
+
 class CliTests(unittest.TestCase):
     def test_cli_gera_arquivo_a_partir_de_excel_e_powerpoint(self):
         with TemporaryDirectory() as diretorio:
@@ -414,7 +454,7 @@ class WebAppTests(unittest.TestCase):
 
         with patch.dict(os.environ, {"CERTIFICA_QR_SECRET": "a" * 64}):
             app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
-            self.assertTrue(app.checkbox[0].value)
+            self.assertTrue(app.checkbox[1].value)
             uploaders = app.get("file_uploader")
             uploaders[0].set_value(("participantes.xlsx", workbook_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
             uploaders[1].set_value(("modelo.pdf", pdf_buffer.getvalue(), "application/pdf"))
