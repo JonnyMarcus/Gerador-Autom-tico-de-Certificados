@@ -17,7 +17,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from gerador_certificados.planilha import ler_participantes
 from gerador_certificados.pdf_certificado import (
-    FONTES_PDF,
     combinar_certificados_pdf,
     gerar_certificados_pdf,
 )
@@ -30,6 +29,18 @@ MAX_XLSX_MB = 5
 MAX_PDF_MB = 10
 MAX_PARTICIPANTES = 500
 MAX_SAIDA_ESTIMADA_BYTES = 100 * 1024 * 1024
+FONTES_EXIBICAO = {
+    "Sem serifa · forte": "Helvetica-Bold",
+    "Sem serifa · leve": "Helvetica",
+    "Clássica · forte": "Times-Bold",
+    "Clássica · leve": "Times-Roman",
+    "Monoespaçada": "Courier",
+}
+ESTILOS = {
+    "Moderno": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 32, "cor": "#17233C"},
+    "Clássico": {"x": 50, "y": 52, "fonte": "Times-Bold", "tamanho": 34, "cor": "#795B32"},
+    "Institucional": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 28, "cor": "#5148E5"},
+}
 
 
 def criar_zip(arquivos: list[Path]) -> bytes:
@@ -190,15 +201,80 @@ for indice, (numero, texto, concluido) in enumerate(status_steps):
 
 coluna_nome = "nome"
 
-with st.expander("Ajustes do nome no certificado", expanded=False):
+def marcar_personalizado() -> None:
+    st.session_state["estilo_personalizacao"] = "Personalizado"
+
+
+st.session_state.setdefault("estilo_personalizacao", "Personalizado")
+st.session_state.setdefault("personalizacao_x", 50)
+st.session_state.setdefault("personalizacao_y", 51)
+st.session_state.setdefault("personalizacao_fonte", "Helvetica-Bold")
+st.session_state.setdefault("personalizacao_tamanho", 32)
+st.session_state.setdefault("personalizacao_cor", "#17233C")
+st.session_state.setdefault("estilo_aplicado", "Personalizado")
+
+with st.expander("Personalize o nome", expanded=True):
+    st.markdown("Comece por um estilo pronto ou ajuste cada detalhe. A prévia acompanha suas mudanças.")
+    estilo = st.radio(
+        "Estilo inicial",
+        options=["Personalizado", *ESTILOS],
+        horizontal=True,
+        key="estilo_personalizacao",
+    )
+    if estilo != st.session_state["estilo_aplicado"]:
+        if estilo in ESTILOS:
+            preset = ESTILOS[estilo]
+            st.session_state["personalizacao_x"] = preset["x"]
+            st.session_state["personalizacao_y"] = preset["y"]
+            st.session_state["personalizacao_fonte"] = preset["fonte"]
+            st.session_state["rotulo_fonte"] = next(
+                rotulo for rotulo, fonte_pdf in FONTES_EXIBICAO.items() if fonte_pdf == preset["fonte"]
+            )
+            st.session_state["personalizacao_tamanho"] = preset["tamanho"]
+            st.session_state["personalizacao_cor"] = preset["cor"]
+        st.session_state["estilo_aplicado"] = estilo
+
+    st.session_state.setdefault("rotulo_fonte", "Sem serifa · forte")
+
     esquerda, direita = st.columns(2)
     with esquerda:
-        posicao_x = st.slider("Posição horizontal", min_value=10, max_value=90, value=50, help="Controla a posição do centro do nome entre as margens.")
-        posicao_y = st.slider("Posição vertical", min_value=10, max_value=90, value=51, help="10% fica perto do topo; 90% fica perto da parte inferior.")
+        posicao_x = st.slider(
+            "Posição horizontal",
+            min_value=10,
+            max_value=90,
+            key="personalizacao_x",
+            help="Controla o centro do nome entre as margens.",
+            on_change=marcar_personalizado,
+        )
+        posicao_y = st.slider(
+            "Posição vertical",
+            min_value=10,
+            max_value=90,
+            key="personalizacao_y",
+            help="10% fica perto do topo; 90% fica perto da parte inferior.",
+            on_change=marcar_personalizado,
+        )
     with direita:
-        fonte = st.selectbox("Fonte", options=FONTES_PDF, index=1)
-        tamanho_fonte = st.slider("Tamanho da fonte", min_value=12, max_value=48, value=32, help="Nomes compridos podem ser reduzidos automaticamente para caber.")
-        cor_texto = st.color_picker("Cor do nome", value="#17233C")
+        rotulo_fonte = st.selectbox(
+            "Fonte",
+            options=list(FONTES_EXIBICAO),
+            key="rotulo_fonte",
+            on_change=marcar_personalizado,
+        )
+        fonte = FONTES_EXIBICAO[rotulo_fonte]
+        tamanho_fonte = st.slider(
+            "Tamanho da fonte",
+            min_value=12,
+            max_value=48,
+            key="personalizacao_tamanho",
+            help="Nomes compridos são reduzidos automaticamente para caber.",
+            on_change=marcar_personalizado,
+        )
+        cor_texto = st.color_picker(
+            "Cor do nome",
+            key="personalizacao_cor",
+            on_change=marcar_personalizado,
+        )
 
 st.caption(
     f"Limites desta versão: planilha até {MAX_XLSX_MB} MB, PDF até {MAX_PDF_MB} MB, "

@@ -233,6 +233,18 @@ class WebAppTests(unittest.TestCase):
         self.assertEqual(len(app.get("file_uploader")), 2)
         self.assertEqual(len(app.get("text_input")), 0)
 
+    def test_estilo_pronto_e_ajuste_manual_sincronizam(self):
+        app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
+        app.radio[0].set_value("Clássico").run()
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.selectbox[0].value, "Clássica · forte")
+        self.assertEqual(app.slider[2].value, 34)
+
+        app.slider[0].set_value(42).run()
+
+        self.assertEqual(len(app.exception), 0)
+        self.assertEqual(app.radio[0].value, "Personalizado")
+
     def test_upload_e_geracao_disponibilizam_as_duas_opcoes_de_download(self):
         workbook_buffer = BytesIO()
         workbook = Workbook()
@@ -252,6 +264,10 @@ class WebAppTests(unittest.TestCase):
         uploaders[1].set_value(("modelo.pdf", pdf_buffer.getvalue(), "application/pdf"))
         app.run()
         self.assertEqual(len(app.exception), 0)
+        self.assertEqual(len(app.get("iframe")), 2)
+        previa_inicial = app.session_state["pdf_previa"]
+        app.slider[0].set_value(42).run()
+        self.assertNotEqual(app.session_state["pdf_previa"], previa_inicial)
 
         app.button[0].click().run()
 
