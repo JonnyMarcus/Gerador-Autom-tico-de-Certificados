@@ -8,6 +8,7 @@ from reportlab.pdfbase.pdfmetrics import stringWidth
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
 from .exportador import nome_seguro
 
@@ -42,6 +43,9 @@ def _sobreposicao_nome(
     tamanho_fonte: float,
     cor: str,
     campos: dict[str, dict[str, float | str]] | None = None,
+    imagens: list[dict[str, float | str | bytes]] | None = None,
+    qr_png: bytes | None = None,
+    qr_posicao: dict[str, float] | None = None,
 ) -> PdfReader:
     buffer = BytesIO()
     desenho = canvas.Canvas(buffer, pagesize=(largura, altura), pageCompression=1)
@@ -67,6 +71,36 @@ def _sobreposicao_nome(
         x_campo = largura * float(ajuste.get("x", 50)) / 100
         y_campo = altura * (100 - float(ajuste.get("y", 62))) / 100
         desenho.drawCentredString(x_campo, y_campo, valor)
+    for imagem in imagens or []:
+        leitor_imagem = ImageReader(BytesIO(imagem["dados"]))
+        largura_original, altura_original = leitor_imagem.getSize()
+        largura_imagem = largura * float(imagem.get("largura", 18)) / 100
+        altura_imagem = largura_imagem * altura_original / largura_original
+        x_imagem = largura * float(imagem.get("x", 5)) / 100
+        y_topo = altura * float(imagem.get("y", 5)) / 100
+        desenho.drawImage(
+            leitor_imagem,
+            x_imagem,
+            altura - y_topo - altura_imagem,
+            width=largura_imagem,
+            height=altura_imagem,
+            preserveAspectRatio=True,
+            mask="auto",
+        )
+    if qr_png:
+        posicao = qr_posicao or {"x": 88, "y": 78, "largura": 10}
+        leitor_qr = ImageReader(BytesIO(qr_png))
+        largura_qr = largura * float(posicao.get("largura", 10)) / 100
+        x_qr = largura * float(posicao.get("x", 88)) / 100
+        y_qr = altura * float(posicao.get("y", 78)) / 100
+        desenho.drawImage(
+            leitor_qr,
+            x_qr,
+            altura - y_qr - largura_qr,
+            width=largura_qr,
+            height=largura_qr,
+            mask="auto",
+        )
     desenho.save()
     buffer.seek(0)
     return PdfReader(buffer)
@@ -84,6 +118,9 @@ def gerar_certificados_pdf(
     cor: str = "#17233C",
     ao_gerar: Callable[[int, int], None] | None = None,
     campos_extras: dict[str, dict[str, float | str]] | None = None,
+    imagens: list[dict[str, float | str | bytes]] | None = None,
+    qr_por_participante: Callable[[dict[str, str]], bytes | None] | None = None,
+    qr_posicao: dict[str, float] | None = None,
 ) -> list[Path]:
     """Aplica cada nome à primeira página do PDF, usando coordenadas percentuais."""
     if not modelo.is_file():
@@ -124,6 +161,9 @@ def gerar_certificados_pdf(
                 campo: {**ajuste, "valor": participante.get(campo, "")}
                 for campo, ajuste in (campos_extras or {}).items()
             },
+            imagens,
+            qr_por_participante(participante) if qr_por_participante else None,
+            qr_posicao,
         )
         primeira_pagina.merge_page(camada_nome.pages[0])
 

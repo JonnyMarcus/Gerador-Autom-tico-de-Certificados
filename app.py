@@ -9,10 +9,17 @@ from pathlib import Path
 import sys
 import tempfile
 from zipfile import ZIP_DEFLATED, ZipFile
+import os
+import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import streamlit as st
 import pymupdf as fitz
+import qrcode
+from PIL import Image
 from openpyxl import Workbook
+from pptx import Presentation
 from reportlab.lib.colors import HexColor
 from reportlab.lib.pagesizes import landscape, A4
 from reportlab.pdfgen import canvas as pdf_canvas
@@ -27,12 +34,17 @@ from gerador_certificados.pdf_certificado import (
 )
 from gerador_certificados.validacao import validar_participantes
 from gerador_certificados.posicao_component import editor_posicao
+from gerador_certificados.exportador import nome_seguro
+from gerador_certificados.certificado import preencher_modelo
+from gerador_certificados.seguranca_qr import gerar_link_verificacao, verificar_link_verificacao
+from gerador_certificados.certificado import campos_modelo
 
 
 st.set_page_config(page_title="Certifica | Gerador de certificados", page_icon="🎓", layout="wide")
 
 MAX_XLSX_MB = 5
 MAX_PDF_MB = 10
+MAX_IMAGEM_MB = 5
 MAX_PARTICIPANTES = 500
 MAX_SAIDA_ESTIMADA_BYTES = 100 * 1024 * 1024
 FONTES_EXIBICAO = {
@@ -54,7 +66,96 @@ ESTILOS = {
     "Moderno": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 32, "cor": "#17233C"},
     "Clássico": {"x": 50, "y": 52, "fonte": "Times-Bold", "tamanho": 34, "cor": "#795B32"},
     "Institucional": {"x": 50, "y": 51, "fonte": "Helvetica-Bold", "tamanho": 28, "cor": "#5148E5"},
+    "Acadêmico": {"x": 50, "y": 52, "fonte": "Times-Bold", "tamanho": 32, "cor": "#243D63"},
+    "Corporativo": {"x": 50, "y": 50, "fonte": "Helvetica-Bold", "tamanho": 30, "cor": "#1C3557"},
+    "Minimalista": {"x": 50, "y": 51, "fonte": "Helvetica", "tamanho": 28, "cor": "#30343B"},
 }
+
+
+def obter_configuracao_qr(chave: str, padrao: str = "") -> str:
+    try:
+        valor = st.secrets.get(chave, padrao)
+        return str(valor) if valor else padrao
+    except Exception:
+        return os.environ.get(f"CERTIFICA_{chave.upper()}", padrao)
+
+
+def criar_qr_png(dados: dict[str, object], segredo: str, url_publica: str) -> bytes:
+    codigo = qrcode.QRCode(error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=5, border=2)
+    codigo.add_data(gerar_link_verificacao(dados, segredo, url_publica))
+    codigo.make(fit=True)
+    imagem = codigo.make_image(fill_color="#17233C", back_color="white")
+    buffer = BytesIO()
+    imagem.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def criar_dados_verificacao(
+    participante: dict[str, str], formato: str, data_emissao: str, campos: list[str]
+) -> dict[str, object]:
+    return {
+        "id": uuid.uuid4().hex[:16].upper(),
+        "nome": participante.get("nome", ""),
+        "emissao": data_emissao,
+        "formato": formato,
+        "campos": {campo: participante.get(campo, "") for campo in campos},
+    }
+
+
+def qr_participante_png(
+    participante: dict[str, str], formato: str, emissao: str, campos: list[str]
+) -> bytes:
+    dados = criar_dados_verificacao(participante, formato, emissao, campos)
+    return criar_qr_png(dados, SEGREDO_QR, URL_PUBLICA_QR)
+
+
+def preparar_imagem(arquivo, x: int, y: int, largura: int) -> dict[str, float | str | bytes]:
+    dados = arquivo.getvalue()
+    with Image.open(BytesIO(dados)) as imagem:
+        if imagem.width > 6000 or imagem.height > 6000 or imagem.width * imagem.height > 30_000_000:
+            raise ValueError("A imagem deve ter no máximo 6000 px por lado e 30 megapixels.")
+        imagem.verify()
+    return {"dados": dados, "x": x, "y": y, "largura": largura}
+
+
+def guardar_no_historico(formato: str, quantidade: int, arquivo_zip: bytes) -> None:
+    limite_bytes = 60 * 1024 * 1024
+    historico = st.session_state.get("historico_emissoes", [])
+    payload = arquivo_zip if len(arquivo_zip) <= limite_bytes else None
+    while historico and sum(len(item.get("zip") or b"") for item in historico) + len(payload or b"") > limite_bytes:
+        historico.pop()
+    historico.insert(
+        0,
+        {
+            "id": uuid.uuid4().hex[:8],
+            "data": datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M"),
+            "formato": formato,
+            "quantidade": quantidade,
+            "zip": payload,
+        },
+    )
+    st.session_state["historico_emissoes"] = historico[:3]
+
+
+SEGREDO_QR = obter_configuracao_qr("qr_secret")
+URL_PUBLICA_QR = obter_configuracao_qr(
+    "public_url", "https://arpalq47szetr6bwvpxtzy.streamlit.app"
+)
+TOKEN_VERIFICACAO = st.query_params.get("verificar")
+if TOKEN_VERIFICACAO:
+    st.title("Verificação de certificado")
+    dados_verificados = verificar_link_verificacao(TOKEN_VERIFICACAO, SEGREDO_QR) if len(SEGREDO_QR) >= 32 else None
+    if dados_verificados:
+        st.success("QR Code válido: os dados conferem com a assinatura digital do certificado.")
+        st.markdown(f"**Certificado:** {dados_verificados.get('id', '—')}")
+        st.markdown(f"**Participante:** {dados_verificados.get('nome', '—')}")
+        st.markdown(f"**Emissão:** {dados_verificados.get('emissao', '—')}")
+        st.markdown(f"**Formato:** {dados_verificados.get('formato', '—')}")
+        if dados_verificados.get("campos"):
+            st.json(dados_verificados["campos"])
+    else:
+        st.error("Este QR Code não é válido ou foi assinado com outra chave.")
+    st.stop()
 
 
 def criar_zip(arquivos: list[Path]) -> bytes:
@@ -74,6 +175,9 @@ def gerar_previa_pdf(
     tamanho_fonte: int,
     cor: str,
     campos_extras: dict[str, dict[str, float | str]] | None = None,
+    imagens: list[dict[str, float | str | bytes]] | None = None,
+    qr_png: bytes | None = None,
+    qr_posicao: dict[str, float] | None = None,
 ) -> bytes:
     with tempfile.TemporaryDirectory(prefix="certificados_previa_") as diretorio:
         pasta = Path(diretorio)
@@ -89,6 +193,9 @@ def gerar_previa_pdf(
             tamanho_fonte=tamanho_fonte,
             cor=cor,
             campos_extras=campos_extras,
+            imagens=imagens,
+            qr_por_participante=(lambda _participante: qr_png) if qr_png else None,
+            qr_posicao=qr_posicao,
         )[0]
         return arquivo.read_bytes()
 
@@ -297,6 +404,17 @@ with certificado_coluna:
         width="stretch",
     )
 
+formato_saida = st.radio(
+    "Formato do modelo e dos certificados",
+    options=["PDF", "PowerPoint"],
+    horizontal=True,
+    key="formato_saida",
+    help="O PDF recebe os ajustes visuais nesta tela. No PowerPoint, os marcadores {nome}, {curso} etc. são substituídos e a formatação vem do modelo.",
+)
+tipo_modelo = ["pdf"] if formato_saida == "PDF" else ["pptx"]
+rotulo_modelo = "Certificado base em PDF" if formato_saida == "PDF" else "Modelo PowerPoint (.pptx)"
+arquivo_modelo = None
+
 uploaded_count = 0
 
 left_step, right_step = st.columns(2)
@@ -307,19 +425,28 @@ with left_step:
         uploaded_count += 1
         st.caption(f"✓ {arquivo_planilha.name} · {arquivo_planilha.size / (1024 * 1024):.2f} MB")
 with right_step:
-    st.markdown('<div class="section-title">2. Certificado base</div><div class="section-help">Envie o arquivo PDF do certificado</div>', unsafe_allow_html=True)
-    arquivo_pdf = st.file_uploader("Escolher certificado PDF", type=["pdf"], label_visibility="collapsed", key="pdf_upload", max_upload_size=MAX_PDF_MB)
-    if arquivo_pdf:
+    st.markdown(f'<div class="section-title">2. {rotulo_modelo}</div><div class="section-help">Envie o arquivo do modelo</div>', unsafe_allow_html=True)
+    arquivo_modelo = st.file_uploader(
+        "Escolher modelo de certificado",
+        type=tipo_modelo,
+        label_visibility="collapsed",
+        key="pdf_upload" if formato_saida == "PDF" else "pptx_upload",
+        max_upload_size=MAX_PDF_MB,
+    )
+    if arquivo_modelo:
         uploaded_count += 1
-        st.caption(f"✓ {arquivo_pdf.name} · {arquivo_pdf.size / (1024 * 1024):.2f} MB")
+        st.caption(f"✓ {arquivo_modelo.name} · {arquivo_modelo.size / (1024 * 1024):.2f} MB")
+
+arquivo_pdf = arquivo_modelo if formato_saida == "PDF" else None
+arquivo_pptx = arquivo_modelo if formato_saida == "PowerPoint" else None
 
 steps = st.columns(3)
 status_steps = [
     ("1", "Lista pronta" if arquivo_planilha else "Envie a lista", bool(arquivo_planilha)),
-    ("2", "PDF pronto" if arquivo_pdf else "Envie o certificado", bool(arquivo_pdf)),
+    ("2", f"{formato_saida} pronto" if arquivo_modelo else "Envie o modelo", bool(arquivo_modelo)),
     ("3", "Pronto para gerar" if uploaded_count == 2 else "Gere e baixe", False),
 ]
-proximo_passo = 0 if not arquivo_planilha else (1 if not arquivo_pdf else 2)
+proximo_passo = 0 if not arquivo_planilha else (1 if not arquivo_modelo else 2)
 for indice, (numero, texto, concluido) in enumerate(status_steps):
     classe = "complete" if concluido else ("active" if indice == proximo_passo else "pending")
     icone = "✓" if concluido else numero
@@ -331,6 +458,8 @@ for indice, (numero, texto, concluido) in enumerate(status_steps):
 coluna_nome = "nome"
 amostra = []
 erro_dados = None
+erro_modelo_pptx = None
+marcadores_modelo = set()
 if arquivo_planilha:
     try:
         with tempfile.TemporaryDirectory(prefix="certificados_lista_") as diretorio:
@@ -360,153 +489,246 @@ if arquivo_planilha:
         erro_dados = str(error)
         st.error(f"Não foi possível ler a planilha: {error}")
 
-campos_disponiveis = [campo for campo in amostra[0] if campo != coluna_nome] if amostra else []
-st.session_state["campos_extras_selecionados"] = [
-    campo for campo in st.session_state.get("campos_extras_selecionados", []) if campo in campos_disponiveis
-]
-campos_selecionados = st.multiselect(
-    "Dados adicionais para imprimir no certificado",
-    options=campos_disponiveis,
-    help="Escolha colunas como curso, carga_horaria ou data. Depois ajuste a posição de cada uma.",
-    key="campos_extras_selecionados",
-)
-if amostra and campos_selecionados:
+campos_selecionados = []
+if formato_saida == "PDF":
+    campos_disponiveis = [campo for campo in amostra[0] if campo != coluna_nome] if amostra else []
+    st.session_state["campos_extras_selecionados"] = [
+        campo for campo in st.session_state.get("campos_extras_selecionados", []) if campo in campos_disponiveis
+    ]
+    campos_selecionados = st.multiselect(
+        "Dados adicionais para imprimir no certificado",
+        options=campos_disponiveis,
+        help="Escolha colunas como curso, carga_horaria ou data. Depois ajuste a posição de cada uma.",
+        key="campos_extras_selecionados",
+    )
+    if amostra and campos_selecionados:
+        try:
+            validar_participantes(amostra, coluna_nome, campos_selecionados)
+        except ValueError as error:
+            erro_dados = str(error)
+            st.error(f"Confira os dados selecionados: {error}")
+elif arquivo_pptx and amostra:
     try:
-        validar_participantes(amostra, coluna_nome, campos_selecionados)
-    except ValueError as error:
-        erro_dados = str(error)
-        st.error(f"Confira os dados selecionados: {error}")
+        with tempfile.TemporaryDirectory(prefix="certificados_modelo_pptx_") as diretorio:
+            caminho_modelo_pptx = Path(diretorio) / "modelo.pptx"
+            caminho_modelo_pptx.write_bytes(arquivo_pptx.getvalue())
+            marcadores_modelo = campos_modelo(caminho_modelo_pptx)
+        if "nome" not in marcadores_modelo:
+            erro_modelo_pptx = "O modelo PowerPoint não contém o marcador obrigatório {nome}."
+            st.error(erro_modelo_pptx)
+        faltantes_modelo = marcadores_modelo - set(amostra[0])
+        if faltantes_modelo:
+            erro_modelo_pptx = f"Faltam colunas na planilha para estes marcadores: {', '.join(sorted(faltantes_modelo))}."
+            st.error(erro_modelo_pptx)
+        elif not erro_modelo_pptx:
+            st.info("O PowerPoint preservará o visual do modelo e preencherá seus marcadores {coluna}.")
+    except Exception as error:
+        erro_modelo_pptx = f"Não foi possível ler o modelo PowerPoint: {error}"
+        st.error(erro_modelo_pptx)
 
 def marcar_personalizado() -> None:
     st.session_state["estilo_personalizacao"] = "Personalizado"
 
 
-st.session_state.setdefault("estilo_personalizacao", "Personalizado")
-st.session_state.setdefault("personalizacao_x", 50)
-st.session_state.setdefault("personalizacao_y", 51)
-st.session_state.setdefault("personalizacao_fonte", "Helvetica-Bold")
-st.session_state.setdefault("personalizacao_tamanho", 32)
-st.session_state.setdefault("personalizacao_cor", "#17233C")
-st.session_state.setdefault("estilo_aplicado", "Personalizado")
-
-with st.expander("Personalize o nome", expanded=True):
-    st.markdown("Comece por um estilo pronto ou ajuste cada detalhe. A prévia acompanha suas mudanças.")
-    estilo = st.radio(
-        "Estilo inicial",
-        options=["Personalizado", *ESTILOS],
-        horizontal=True,
-        key="estilo_personalizacao",
-    )
-    if estilo != st.session_state["estilo_aplicado"]:
-        if estilo in ESTILOS:
-            preset = ESTILOS[estilo]
-            st.session_state["personalizacao_x"] = preset["x"]
-            st.session_state["personalizacao_y"] = preset["y"]
-            st.session_state["personalizacao_fonte"] = preset["fonte"]
-            st.session_state["rotulo_fonte"] = next(
-                rotulo for rotulo, fonte_pdf in FONTES_EXIBICAO.items() if fonte_pdf == preset["fonte"]
-            )
-            st.session_state["personalizacao_tamanho"] = preset["tamanho"]
-            st.session_state["personalizacao_cor"] = preset["cor"]
-        st.session_state["estilo_aplicado"] = estilo
-
-    st.session_state.setdefault("rotulo_fonte", "Moderna · negrito")
-
-    esquerda, direita = st.columns(2)
-    with esquerda:
-        posicao_x = st.slider(
-            "Posição horizontal",
-            min_value=10,
-            max_value=90,
-            key="personalizacao_x",
-            help="Controla o centro do nome entre as margens.",
-            on_change=marcar_personalizado,
-        )
-        posicao_y = st.slider(
-            "Posição vertical",
-            min_value=10,
-            max_value=90,
-            key="personalizacao_y",
-            help="10% fica perto do topo; 90% fica perto da parte inferior.",
-            on_change=marcar_personalizado,
-        )
-    with direita:
-        st.markdown("**Estilo tipográfico**")
-        rotulo_fonte = st.selectbox(
-            "Fonte",
-            options=list(FONTES_EXIBICAO),
-            key="rotulo_fonte",
-            format_func=lambda opcao: opcao,
-            on_change=marcar_personalizado,
-            help="Escolha entre estilos modernos, clássicos e monoespaçados, com variações de peso e inclinação.",
-        )
-        fonte = FONTES_EXIBICAO[rotulo_fonte]
-        st.caption("As fontes são incorporadas como recursos padrão do PDF; não é preciso instalar nada.")
-        tamanho_fonte = st.slider(
-            "Tamanho da fonte",
-            min_value=12,
-            max_value=48,
-            key="personalizacao_tamanho",
-            help="Nomes compridos são reduzidos automaticamente para caber.",
-            on_change=marcar_personalizado,
-        )
-        cor_texto = st.color_picker(
-            "Cor do nome",
-            key="personalizacao_cor",
-            on_change=marcar_personalizado,
-        )
-
+posicao_x = 50
+posicao_y = 51
+fonte = "Helvetica-Bold"
+tamanho_fonte = 32
+cor_texto = "#17233C"
 campos_extras = {}
-if campos_selecionados:
-    with st.expander("Posição dos dados adicionais", expanded=False):
-        st.caption("Cada campo será centralizado na posição escolhida, usando a fonte e a cor do nome.")
-        for indice, campo in enumerate(campos_selecionados):
-            st.markdown(f"**{campo.replace('_', ' ').capitalize()}**")
-            chave_x = f"campo_extra_{campo}_x"
-            chave_y = f"campo_extra_{campo}_y"
-            st.session_state.setdefault(chave_x, 50)
-            st.session_state.setdefault(chave_y, min(90, 62 + indice * 8))
-            col_x, col_y = st.columns(2)
-            with col_x:
-                st.slider("Posição horizontal (%)", 5, 95, key=chave_x, on_change=marcar_personalizado)
-            with col_y:
-                st.slider("Posição vertical (%)", 5, 95, key=chave_y, on_change=marcar_personalizado)
-            campos_extras[campo] = {
-                "x": st.session_state[chave_x],
-                "y": st.session_state[chave_y],
-                "fonte": fonte,
-                "tamanho": max(10, tamanho_fonte - 5),
-                "cor": cor_texto,
-            }
+if formato_saida == "PDF":
+    st.session_state.setdefault("estilo_personalizacao", "Personalizado")
+    st.session_state.setdefault("personalizacao_x", 50)
+    st.session_state.setdefault("personalizacao_y", 51)
+    st.session_state.setdefault("personalizacao_fonte", "Helvetica-Bold")
+    st.session_state.setdefault("personalizacao_tamanho", 32)
+    st.session_state.setdefault("personalizacao_cor", "#17233C")
+    st.session_state.setdefault("estilo_aplicado", "Personalizado")
 
-if arquivo_pdf:
-    try:
-        imagem_editor = imagem_primeira_pagina(arquivo_pdf.getvalue())
-        areas_editor = {"nome": (posicao_x, posicao_y)}
-        areas_editor.update({campo: (ajuste["x"], ajuste["y"]) for campo, ajuste in campos_extras.items()})
-        resumo_pdf, avisos_pdf = diagnosticar_area_pdf(arquivo_pdf.getvalue(), areas_editor)
-        st.caption(f"PDF validado · {resumo_pdf}")
-        for aviso_pdf in avisos_pdf:
-            st.warning(aviso_pdf)
-        valor_editor = editor_posicao(
-            imagem=imagem_editor,
-            nome=amostra[0][coluna_nome] if amostra else "Nome do participante",
-            x=posicao_x,
-            y=posicao_y,
-            tamanho=tamanho_fonte,
-            cor=cor_texto,
-            fonte=fonte,
-            chave="editor-posicao-certificado",
-            on_change=marcar_personalizado,
+    with st.expander("Personalize o nome", expanded=True):
+        st.markdown("Comece por um estilo pronto ou ajuste cada detalhe. A prévia acompanha suas mudanças.")
+        estilo = st.radio(
+            "Estilo inicial",
+            options=["Personalizado", *ESTILOS],
+            horizontal=True,
+            key="estilo_personalizacao",
         )
-        if valor_editor and valor_editor.get("nonce") != st.session_state.get("editor_posicao_nonce"):
-            st.session_state["editor_posicao_nonce"] = valor_editor.get("nonce")
-            st.session_state["personalizacao_x"] = int(valor_editor["x"])
-            st.session_state["personalizacao_y"] = int(valor_editor["y"])
-            posicao_x = st.session_state["personalizacao_x"]
-            posicao_y = st.session_state["personalizacao_y"]
-    except Exception as error:
-        st.error(f"Não foi possível abrir o PDF no editor: {error}")
+        if estilo != st.session_state["estilo_aplicado"]:
+            if estilo in ESTILOS:
+                preset = ESTILOS[estilo]
+                st.session_state["personalizacao_x"] = preset["x"]
+                st.session_state["personalizacao_y"] = preset["y"]
+                st.session_state["personalizacao_fonte"] = preset["fonte"]
+                st.session_state["rotulo_fonte"] = next(
+                    rotulo for rotulo, fonte_pdf in FONTES_EXIBICAO.items() if fonte_pdf == preset["fonte"]
+                )
+                st.session_state["personalizacao_tamanho"] = preset["tamanho"]
+                st.session_state["personalizacao_cor"] = preset["cor"]
+            st.session_state["estilo_aplicado"] = estilo
+
+        st.session_state.setdefault("rotulo_fonte", "Moderna · negrito")
+
+        esquerda, direita = st.columns(2)
+        with esquerda:
+            posicao_x = st.slider(
+                "Posição horizontal",
+                min_value=10,
+                max_value=90,
+                key="personalizacao_x",
+                help="Controla o centro do nome entre as margens.",
+                on_change=marcar_personalizado,
+            )
+            posicao_y = st.slider(
+                "Posição vertical",
+                min_value=10,
+                max_value=90,
+                key="personalizacao_y",
+                help="10% fica perto do topo; 90% fica perto da parte inferior.",
+                on_change=marcar_personalizado,
+            )
+        with direita:
+            st.markdown("**Estilo tipográfico**")
+            rotulo_fonte = st.selectbox(
+                "Fonte",
+                options=list(FONTES_EXIBICAO),
+                key="rotulo_fonte",
+                format_func=lambda opcao: opcao,
+                on_change=marcar_personalizado,
+                help="Escolha entre estilos modernos, clássicos e monoespaçados, com variações de peso e inclinação.",
+            )
+            fonte = FONTES_EXIBICAO[rotulo_fonte]
+            st.caption("As fontes são incorporadas como recursos padrão do PDF; não é preciso instalar nada.")
+            tamanho_fonte = st.slider(
+                "Tamanho da fonte",
+                min_value=12,
+                max_value=48,
+                key="personalizacao_tamanho",
+                help="Nomes compridos são reduzidos automaticamente para caber.",
+                on_change=marcar_personalizado,
+            )
+            cor_texto = st.color_picker(
+                "Cor do nome",
+                key="personalizacao_cor",
+                on_change=marcar_personalizado,
+            )
+
+    campos_extras = {}
+    if campos_selecionados:
+        with st.expander("Posição dos dados adicionais", expanded=False):
+            st.caption("Cada campo será centralizado na posição escolhida, usando a fonte e a cor do nome.")
+            for indice, campo in enumerate(campos_selecionados):
+                st.markdown(f"**{campo.replace('_', ' ').capitalize()}**")
+                chave_x = f"campo_extra_{campo}_x"
+                chave_y = f"campo_extra_{campo}_y"
+                st.session_state.setdefault(chave_x, 50)
+                st.session_state.setdefault(chave_y, min(90, 62 + indice * 8))
+                col_x, col_y = st.columns(2)
+                with col_x:
+                    st.slider("Posição horizontal (%)", 5, 95, key=chave_x, on_change=marcar_personalizado)
+                with col_y:
+                    st.slider("Posição vertical (%)", 5, 95, key=chave_y, on_change=marcar_personalizado)
+                campos_extras[campo] = {
+                    "x": st.session_state[chave_x],
+                    "y": st.session_state[chave_y],
+                    "fonte": fonte,
+                    "tamanho": max(10, tamanho_fonte - 5),
+                    "cor": cor_texto,
+                }
+
+    if arquivo_pdf:
+        try:
+            imagem_editor = imagem_primeira_pagina(arquivo_pdf.getvalue())
+            areas_editor = {"nome": (posicao_x, posicao_y)}
+            areas_editor.update({campo: (ajuste["x"], ajuste["y"]) for campo, ajuste in campos_extras.items()})
+            resumo_pdf, avisos_pdf = diagnosticar_area_pdf(arquivo_pdf.getvalue(), areas_editor)
+            st.caption(f"PDF validado · {resumo_pdf}")
+            for aviso_pdf in avisos_pdf:
+                st.warning(aviso_pdf)
+            valor_editor = editor_posicao(
+                imagem=imagem_editor,
+                nome=amostra[0][coluna_nome] if amostra else "Nome do participante",
+                x=posicao_x,
+                y=posicao_y,
+                tamanho=tamanho_fonte,
+                cor=cor_texto,
+                fonte=fonte,
+                chave="editor-posicao-certificado",
+                on_change=marcar_personalizado,
+            )
+            if valor_editor and valor_editor.get("nonce") != st.session_state.get("editor_posicao_nonce"):
+                st.session_state["editor_posicao_nonce"] = valor_editor.get("nonce")
+                st.session_state["personalizacao_x"] = int(valor_editor["x"])
+                st.session_state["personalizacao_y"] = int(valor_editor["y"])
+                posicao_x = st.session_state["personalizacao_x"]
+                posicao_y = st.session_state["personalizacao_y"]
+        except Exception as error:
+            st.error(f"Não foi possível abrir o PDF no editor: {error}")
+else:
+    st.info("No PowerPoint, os nomes e demais dados seguem a posicao dos marcadores no proprio modelo.")
+
+st.markdown('<div class="section-title">Marca visual e QR de verificação</div>', unsafe_allow_html=True)
+logo_coluna, assinatura_coluna = st.columns(2)
+with logo_coluna:
+    arquivo_logo = st.file_uploader(
+        "Logo opcional (PNG/JPG)", type=["png", "jpg", "jpeg"], key="logo_upload", max_upload_size=MAX_IMAGEM_MB
+    )
+with assinatura_coluna:
+    arquivo_assinatura = st.file_uploader(
+        "Assinatura opcional (PNG/JPG)", type=["png", "jpg", "jpeg"], key="assinatura_upload", max_upload_size=MAX_IMAGEM_MB
+    )
+
+imagens_extras = []
+if arquivo_logo or arquivo_assinatura:
+    with st.expander("Posição e tamanho das imagens", expanded=False):
+        for rotulo, arquivo, x_padrao, y_padrao, largura_padrao in (
+            ("Logo", arquivo_logo, 5, 5, 18),
+            ("Assinatura", arquivo_assinatura, 70, 76, 20),
+        ):
+            if not arquivo:
+                continue
+            st.markdown(f"**{rotulo}**")
+            prefixo = rotulo.lower()
+            for sufixo, padrao in (("x", x_padrao), ("y", y_padrao), ("largura", largura_padrao)):
+                st.session_state.setdefault(f"imagem_{prefixo}_{sufixo}", padrao)
+            col_ix, col_iy, col_iw = st.columns(3)
+            with col_ix:
+                st.slider("Esquerda (%)", 0, 90, key=f"imagem_{prefixo}_x")
+            with col_iy:
+                st.slider("Topo (%)", 0, 90, key=f"imagem_{prefixo}_y")
+            with col_iw:
+                st.slider("Largura (%)", 5, 40, key=f"imagem_{prefixo}_largura")
+            try:
+                imagens_extras.append(
+                    preparar_imagem(
+                        arquivo,
+                        st.session_state[f"imagem_{prefixo}_x"],
+                        st.session_state[f"imagem_{prefixo}_y"],
+                        st.session_state[f"imagem_{prefixo}_largura"],
+                    )
+                )
+            except Exception as error:
+                st.error(f"A imagem {rotulo.lower()} não pôde ser lida: {error}")
+
+st.session_state.setdefault("incluir_qr", len(SEGREDO_QR) >= 32)
+incluir_qr = st.checkbox(
+    "Adicionar QR Code de verificação em cada certificado",
+    key="incluir_qr",
+    disabled=len(SEGREDO_QR) < 32,
+    help="O QR inclui o nome, a data de emissao e os campos usados no modelo ou selecionados, assinados com HMAC.",
+)
+qr_habilitado = bool(incluir_qr and len(SEGREDO_QR) >= 32)
+if len(SEGREDO_QR) < 32:
+    st.warning("QR de verificação desativado. Configure `qr_secret` com pelo menos 32 caracteres nos Secrets do Streamlit.")
+qr_posicao = {"x": 80, "y": 78, "largura": 10}
+if qr_habilitado:
+    st.caption("O QR contém o nome e os campos extras marcados; evite incluí-lo se esses dados não puderem ser compartilhados.")
+    qx, qy, qt = st.columns(3)
+    with qx:
+        qr_posicao["x"] = st.slider("QR · esquerda (%)", 0, 80, 80)
+    with qy:
+        qr_posicao["y"] = st.slider("QR · topo (%)", 0, 80, 78)
+    with qt:
+        qr_posicao["largura"] = st.slider("QR · tamanho (%)", 6, 20, 10)
 
 st.caption(
     f"Limites desta versão: planilha até {MAX_XLSX_MB} MB, PDF até {MAX_PDF_MB} MB, "
@@ -514,6 +736,7 @@ st.caption(
 )
 
 fingerprint = (
+    formato_saida,
     coluna_nome,
     posicao_x,
     posicao_y,
@@ -525,19 +748,32 @@ fingerprint = (
         for campo, ajuste in sorted(campos_extras.items())
     ),
     sha256(arquivo_planilha.getvalue()).hexdigest() if arquivo_planilha else None,
-    sha256(arquivo_pdf.getvalue()).hexdigest() if arquivo_pdf else None,
+    sha256(arquivo_modelo.getvalue()).hexdigest() if arquivo_modelo else None,
+    tuple(
+        (sha256(imagem["dados"]).hexdigest(), imagem["x"], imagem["y"], imagem["largura"])
+        for imagem in imagens_extras
+    ),
+    qr_habilitado,
+    tuple(sorted(qr_posicao.items())),
 )
 if st.session_state.get("fingerprint") != fingerprint:
     st.session_state.pop("zip_certificados", None)
     st.session_state.pop("pdf_unico", None)
     st.session_state.pop("pdf_previa", None)
     st.session_state.pop("total_certificados", None)
+    st.session_state.pop("formato_resultado", None)
     st.session_state["fingerprint"] = fingerprint
 
 if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
     try:
         with st.spinner("Preparando prévia com o primeiro participante…"):
             if "pdf_previa" not in st.session_state:
+                emissao_previa = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
+                qr_previa = (
+                    qr_participante_png(amostra[0], "PDF", emissao_previa, list(campos_selecionados))
+                    if qr_habilitado
+                    else None
+                )
                 st.session_state["pdf_previa"] = gerar_previa_pdf(
                     arquivo_pdf.getvalue(),
                     amostra[0],
@@ -547,6 +783,9 @@ if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
                     tamanho_fonte,
                     cor_texto,
                     campos_extras,
+                    imagens_extras,
+                    qr_previa,
+                    qr_posicao,
                 )
         with st.expander("Prévia do primeiro certificado", expanded=True):
             dados_pdf = base64.b64encode(st.session_state["pdf_previa"]).decode("ascii")
@@ -559,84 +798,122 @@ if arquivo_pdf and amostra and amostra[0].get(coluna_nome, "").strip():
         st.warning(f"Não foi possível criar a prévia: {error}")
 
 st.markdown("<div style='height:.5rem'></div>", unsafe_allow_html=True)
-if st.button("✦  Gerar certificados", type="primary", width="stretch"):
-    if not arquivo_planilha or not arquivo_pdf:
-        st.error("Envie a planilha e o PDF do certificado antes de continuar.")
+if st.button("Gerar certificados", type="primary", width="stretch"):
+    if not arquivo_planilha or not arquivo_modelo:
+        st.error("Envie a planilha e o modelo de certificado antes de continuar.")
+    elif erro_dados or (formato_saida == "PowerPoint" and erro_modelo_pptx):
+        st.error(erro_dados or erro_modelo_pptx)
     else:
         try:
             with tempfile.TemporaryDirectory(prefix="gerador_certificados_") as diretorio:
                 pasta = Path(diretorio)
                 caminho_planilha = pasta / "participantes.xlsx"
-                caminho_pdf = pasta / "certificado.pdf"
+                caminho_modelo = pasta / ("certificado.pdf" if formato_saida == "PDF" else "modelo.pptx")
                 caminho_planilha.write_bytes(arquivo_planilha.getvalue())
-                caminho_pdf.write_bytes(arquivo_pdf.getvalue())
-
+                caminho_modelo.write_bytes(arquivo_modelo.getvalue())
                 participantes = ler_participantes(caminho_planilha)
                 validar_participantes(participantes, coluna_nome, campos=campos_selecionados)
                 if len(participantes) > MAX_PARTICIPANTES:
-                    raise ValueError(
-                        f"O limite é {MAX_PARTICIPANTES} participantes por geração; "
-                        f"a planilha contém {len(participantes)}."
-                    )
-                sobrecarga_por_certificado = 64 * 1024 if fonte == "GreatVibes" else 8 * 1024
-                saida_estimada = len(participantes) * (arquivo_pdf.size + sobrecarga_por_certificado)
+                    raise ValueError(f"Limite de {MAX_PARTICIPANTES} participantes por geracao; a planilha contem {len(participantes)}.")
+                quantidade_slides = len(Presentation(caminho_modelo).slides) if formato_saida == "PowerPoint" else 1
+                sobrecarga = (64 * 1024 if fonte == "GreatVibes" else 8 * 1024) if formato_saida == "PDF" else 0
+                sobrecarga += sum(len(imagem["dados"]) for imagem in imagens_extras) * quantidade_slides
+                if qr_habilitado:
+                    sobrecarga += 24 * 1024 * quantidade_slides
+                saida_estimada = len(participantes) * (arquivo_modelo.size + sobrecarga)
                 if saida_estimada > MAX_SAIDA_ESTIMADA_BYTES:
                     limite_mb = MAX_SAIDA_ESTIMADA_BYTES // (1024 * 1024)
-                    raise ValueError(
-                        f"A saída estimada passa de {limite_mb} MB. "
-                        "Use um PDF menor ou divida os participantes em lotes."
-                    )
-                progresso = st.progress(0, text="Preparando os certificados…")
+                    raise ValueError(f"A saida estimada passa de {limite_mb} MB. Use um modelo menor ou divida a lista em lotes.")
+                emissao = datetime.now(ZoneInfo("America/Sao_Paulo")).strftime("%d/%m/%Y %H:%M")
+                campos_qr = list(campos_selecionados)
+                if formato_saida == "PowerPoint":
+                    campos_qr = sorted(marcadores_modelo - {"nome"})
 
-                def atualizar_progresso(atual: int, total: int) -> None:
-                    percentual = int(atual / total * 100)
-                    progresso.progress(percentual, text=f"Gerando certificado {atual} de {total}…")
+                def qr_para_participante(pessoa: dict[str, str]) -> bytes:
+                    return qr_participante_png(pessoa, formato_saida, emissao, campos_qr)
 
-                try:
-                    arquivos = gerar_certificados_pdf(
-                        caminho_pdf,
-                        pasta / "certificados",
-                        participantes,
-                        coluna_nome,
-                        posicao_x=posicao_x,
-                        posicao_y=posicao_y,
-                        fonte=fonte,
-                        tamanho_fonte=tamanho_fonte,
-                        cor=cor_texto,
-                        ao_gerar=atualizar_progresso,
-                        campos_extras=campos_extras,
-                    )
-                finally:
-                    progresso.empty()
-                st.session_state["zip_certificados"] = criar_zip(arquivos)
-                st.session_state["pdf_unico"] = combinar_certificados_pdf(arquivos)
+                if formato_saida == "PDF":
+                    progresso = st.progress(0, text="Preparando os certificados")
+                    def atualizar_progresso(atual: int, total: int) -> None:
+                        progresso.progress(int(atual / total * 100), text=f"Gerando certificado {atual} de {total}")
+                    try:
+                        arquivos = gerar_certificados_pdf(
+                            caminho_modelo, pasta / "certificados", participantes, coluna_nome,
+                            posicao_x=posicao_x, posicao_y=posicao_y, fonte=fonte,
+                            tamanho_fonte=tamanho_fonte, cor=cor_texto,
+                            ao_gerar=atualizar_progresso, campos_extras=campos_extras,
+                            imagens=imagens_extras,
+                            qr_por_participante=qr_para_participante if qr_habilitado else None,
+                            qr_posicao=qr_posicao,
+                        )
+                    finally:
+                        progresso.empty()
+                    pdf_unico = combinar_certificados_pdf(arquivos)
+                    extensao = "PDF"
+                else:
+                    arquivos = []
+                    pasta_saida = pasta / "certificados"
+                    pasta_saida.mkdir()
+                    for indice, pessoa in enumerate(participantes, start=1):
+                        imagens_pessoa = list(imagens_extras)
+                        if qr_habilitado:
+                            imagens_pessoa.append({"dados": qr_para_participante(pessoa), **qr_posicao})
+                        destino = pasta_saida / f"{indice:03d}_{nome_seguro(pessoa[coluna_nome])}.pptx"
+                        preencher_modelo(caminho_modelo, destino, pessoa, imagens=imagens_pessoa)
+                        arquivos.append(destino)
+                    pdf_unico = None
+                    extensao = "PowerPoint"
+
+                arquivo_zip = criar_zip(arquivos)
+                st.session_state["zip_certificados"] = arquivo_zip
+                st.session_state["pdf_unico"] = pdf_unico
                 st.session_state["total_certificados"] = len(arquivos)
-
+                st.session_state["formato_resultado"] = extensao
+                guardar_no_historico(extensao, len(arquivos), arquivo_zip)
         except (FileNotFoundError, ValueError, PermissionError, OSError) as error:
-            st.error(f"Não foi possível gerar os certificados: {error}")
+            st.error(f"Nao foi possivel gerar os certificados: {error}")
         except Exception as error:
             st.error(f"Ocorreu um erro ao processar os arquivos: {error}")
 
 if st.session_state.get("zip_certificados"):
-    st.success(f"{st.session_state['total_certificados']} certificados prontos. Escolha como baixar:")
-    zip_coluna, pdf_coluna = st.columns(2)
-    with zip_coluna:
+    formato_resultado = st.session_state.get("formato_resultado", "PDF")
+    st.success(f"{st.session_state['total_certificados']} certificados {formato_resultado} prontos.")
+    st.download_button(
+        f"Baixar arquivos {formato_resultado} (.zip)",
+        data=st.session_state["zip_certificados"],
+        file_name="certificados.zip" if formato_resultado == "PDF" else "certificados_powerpoint.zip",
+        mime="application/zip",
+        type="primary",
+        width="stretch",
+    )
+    if st.session_state.get("pdf_unico"):
         st.download_button(
-            "↓  PDFs separados (.zip)",
-            data=st.session_state["zip_certificados"],
-            file_name="certificados.zip",
-            mime="application/zip",
-            type="primary",
-            width="stretch",
-        )
-    with pdf_coluna:
-        st.download_button(
-            "↓  Todos em um PDF",
+            "Baixar todos em um PDF",
             data=st.session_state["pdf_unico"],
             file_name="certificados_completos.pdf",
             mime="application/pdf",
             width="stretch",
         )
+
+if st.session_state.get("historico_emissoes"):
+    st.subheader("Historico desta sessao")
+    st.caption("Os lotes ficam disponiveis enquanto esta sessao do navegador estiver aberta.")
+    for lote in st.session_state["historico_emissoes"]:
+        with st.expander(f"{lote['data']} - {lote['quantidade']} certificados - {lote['formato']}"):
+            if lote.get("zip"):
+                st.download_button(
+                    "Baixar novamente este lote (.zip)",
+                    data=lote["zip"],
+                    file_name=f"certificados_{lote['id']}.zip",
+                    mime="application/zip",
+                    key=f"historico_{lote['id']}",
+                    width="stretch",
+                )
+            else:
+                st.info("Este lote ultrapassou o limite reservado ao historico; gere-o novamente para baixar.")
+    if st.button("Limpar historico desta sessao", key="limpar_historico"):
+        st.session_state["historico_emissoes"] = []
+        st.rerun()
 
 st.markdown(
     '<div class="privacy-note">Seus arquivos são processados para esta geração e não devem conter dados confidenciais.</div>',

@@ -16,17 +16,24 @@ src/gerador_certificados/
   validacao.py                  Validação dos dados de entrada
   certificado.py                Substituição dos marcadores no PowerPoint
   pdf_certificado.py            Aplicação dos nomes sobre o PDF
+  posicao_component.py          Editor visual arrastável para PDFs
+  seguranca_qr.py               Assinatura e validação dos QR Codes
+  editor_posicao/                Interface do editor e fonte manuscrita licenciada
   exportador.py                 Criação e nomeação dos arquivos
   logging_config.py             Configuração de logs
 ```
 
 ## Aplicação web
 
-A interface permite enviar uma planilha `.xlsx` e um certificado base `.pdf`, conferir uma amostra dos participantes, posicionar o nome arrastando-o sobre a primeira página e visualizar a prévia antes de gerar. A coluna dos nomes deve se chamar `nome`; outras colunas (por exemplo `curso`, `carga_horaria` e `data`) podem ser selecionadas e posicionadas individualmente. A tela avisa sobre nomes repetidos, campos obrigatórios vazios e texto detectável perto das áreas de impressão. Também oferece modelos de planilha e certificado para baixar.
+A interface aceita modelos PDF ou PowerPoint (`.pptx`). No PDF, dá para arrastar o nome na prévia, escolher temas, selecionar colunas adicionais e posicioná-las. No PowerPoint, os marcadores `{nome}`, `{curso}` e outros cabeçalhos são substituídos mantendo a formatação do modelo. Em ambos os formatos, podem ser incluídos logo, assinatura e QR Code assinado para verificação.
+
+A coluna `nome` é obrigatória. A interface avisa sobre nomes repetidos, campos selecionados vazios, marcadores do PowerPoint sem coluna correspondente e texto selecionável perto das áreas de impressão do PDF. Também oferece modelos de planilha e certificado. O histórico mantém até três lotes baixáveis durante a sessão do navegador e reserva até 60 MB para esses arquivos; não é um arquivo permanente.
 
 A tipografia oferece famílias modernas (Helvetica), clássicas (Times) e monoespaçadas (Courier), cada uma com variações regular, negrito, itálico e negrito itálico, além da fonte manuscrita [Great Vibes](https://github.com/google/fonts/tree/main/ofl/greatvibes). Great Vibes é distribuída sob a SIL Open Font License 1.1; a fonte e a licença acompanham os arquivos do editor em `src/gerador_certificados/editor_posicao/`. A animação de entrada usa GSAP e respeita a configuração de movimento reduzido do dispositivo. A primeira página do PDF é renderizada para o editor visual pelo PyMuPDF. Os arquivos enviados são processados em diretório temporário durante a sessão.
 
 A interface limita a planilha a 5 MB, o certificado a 10 MB, a geração a 500 participantes e o tamanho estimado da saída a 100 MB.
+
+Para ativar QR Codes assinados, configure `qr_secret` nos Secrets do Streamlit Cloud com pelo menos 32 caracteres aleatórios e `public_url` com o endereço público do app. Gere a chave com `python -c "import secrets; print(secrets.token_hex(32))"`. Mantenha a mesma chave para validar os QR Codes já emitidos; trocar a chave invalida as assinaturas anteriores. O QR contém o nome, a data e os campos extras escolhidos. Uma configuração local de exemplo está em `.streamlit/secrets.toml.example`.
 
 Para executar localmente:
 

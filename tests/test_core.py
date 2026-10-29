@@ -1,18 +1,24 @@
 from pathlib import Path
 from io import BytesIO
+import os
 import subprocess
 import sys
 from tempfile import TemporaryDirectory
 import unittest
+from unittest.mock import patch
+from zipfile import ZipFile
 
 from openpyxl import Workbook
 from pptx import Presentation
 from pptx.util import Inches
 from pypdf import PdfReader
 from reportlab.pdfgen import canvas
+from PIL import Image
+import qrcode
 from streamlit.testing.v1 import AppTest
 
 from gerador_certificados.certificado import preencher_modelo
+from gerador_certificados.certificado import campos_modelo
 from gerador_certificados.config import ROOT_DIR
 from gerador_certificados.exportador import nome_seguro
 from gerador_certificados.pdf_certificado import (
@@ -21,6 +27,7 @@ from gerador_certificados.pdf_certificado import (
 )
 from gerador_certificados.planilha import ler_participantes
 from gerador_certificados.validacao import validar_participantes
+from gerador_certificados.seguranca_qr import gerar_link_verificacao, verificar_link_verificacao
 
 
 class PlanilhaTests(unittest.TestCase):
@@ -162,6 +169,25 @@ class PdfTests(unittest.TestCase):
             self.assertIn("Rita Souza", texto)
             self.assertIn("Primeiros Socorros", texto)
 
+    def test_insere_logo_e_qr_no_pdf(self):
+        with TemporaryDirectory() as diretorio:
+            pasta = Path(diretorio)
+            modelo = pasta / "modelo.pdf"
+            self.criar_modelo(modelo)
+            logo = BytesIO()
+            Image.new("RGBA", (100, 50), (20, 60, 120, 180)).save(logo, format="PNG")
+            qr = BytesIO()
+            qrcode.make("https://exemplo.com/verificar").save(qr, format="PNG")
+            arquivo = gerar_certificados_pdf(
+                modelo,
+                pasta / "saida",
+                [{"nome": "Rita"}],
+                imagens=[{"dados": logo.getvalue(), "x": 5, "y": 5, "largura": 18}],
+                qr_por_participante=lambda _pessoa: qr.getvalue(),
+                qr_posicao={"x": 85, "y": 78, "largura": 10},
+            )[0]
+            self.assertEqual(len(PdfReader(arquivo).pages[0].images), 2)
+
     def test_nao_combina_lista_vazia(self):
         with self.assertRaisesRegex(ValueError, "Não há certificados"):
             combinar_certificados_pdf([])
@@ -216,6 +242,38 @@ class PowerPointTests(unittest.TestCase):
             resultado = Presentation(saida)
             self.assertEqual(resultado.slides[0].shapes[0].table.cell(0, 0).text, "Marina")
 
+    def test_le_marcadores_e_insere_imagem_no_modelo(self):
+        with TemporaryDirectory() as diretorio:
+            pasta = Path(diretorio)
+            modelo = pasta / "modelo.pptx"
+            saida = pasta / "saida.pptx"
+            apresentacao = Presentation()
+            slide = apresentacao.slides.add_slide(apresentacao.slide_layouts[6])
+            slide.shapes.add_textbox(Inches(1), Inches(1), Inches(5), Inches(1)).text = "{nome} · {curso}"
+            apresentacao.save(modelo)
+            imagem = BytesIO()
+            Image.new("RGBA", (120, 60), (20, 60, 120, 180)).save(imagem, format="PNG")
+
+            self.assertEqual(campos_modelo(modelo), {"nome", "curso"})
+            preencher_modelo(
+                modelo,
+                saida,
+                {"nome": "Rita", "curso": "Matemática"},
+                imagens=[{"dados": imagem.getvalue(), "x": 5, "y": 5, "largura": 18}],
+            )
+            resultado = Presentation(saida)
+            self.assertEqual(len(resultado.slides[0].shapes), 2)
+            self.assertTrue(any(shape.shape_type == 13 for shape in resultado.slides[0].shapes))
+
+
+class QrSecurityTests(unittest.TestCase):
+    def test_assina_e_rejeita_payload_alterado(self):
+        segredo = "x" * 64
+        link = gerar_link_verificacao({"id": "A1", "nome": "Ana"}, segredo, "https://exemplo.com")
+        token = link.split("verificar=", 1)[1]
+        self.assertEqual(verificar_link_verificacao(token, segredo), {"id": "A1", "nome": "Ana"})
+        self.assertIsNone(verificar_link_verificacao(token[:-2] + "ab", segredo))
+
 
 class CliTests(unittest.TestCase):
     def test_cli_gera_arquivo_a_partir_de_excel_e_powerpoint(self):
@@ -263,12 +321,12 @@ class WebAppTests(unittest.TestCase):
     def test_interface_inicia_sem_erros(self):
         app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(len(app.get("file_uploader")), 2)
+        self.assertEqual(len(app.get("file_uploader")), 4)
         self.assertEqual(len(app.get("text_input")), 0)
 
     def test_estilo_pronto_e_ajuste_manual_sincronizam(self):
         app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
-        app.radio[0].set_value("Clássico").run()
+        app.radio[1].set_value("Clássico").run()
         self.assertEqual(len(app.exception), 0)
         self.assertEqual(app.selectbox[0].value, "Clássica · negrito")
         self.assertEqual(app.slider[2].value, 34)
@@ -276,7 +334,7 @@ class WebAppTests(unittest.TestCase):
         app.slider[0].set_value(42).run()
 
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(app.radio[0].value, "Personalizado")
+        self.assertEqual(app.radio[1].value, "Personalizado")
 
     def test_upload_e_geracao_disponibilizam_as_duas_opcoes_de_download(self):
         workbook_buffer = BytesIO()
@@ -308,7 +366,64 @@ class WebAppTests(unittest.TestCase):
         app.button[0].click().run()
 
         self.assertEqual(len(app.exception), 0)
-        self.assertEqual(len(app.get("download_button")), 4)
+        self.assertEqual(len(app.get("download_button")), 5)
+
+    def test_interface_gera_powerpoint_e_guarda_lote_no_historico(self):
+        workbook_buffer = BytesIO()
+        workbook = Workbook()
+        workbook.active.append(["nome", "curso"])
+        workbook.active.append(["Ana Souza", "Primeiros Socorros"])
+        workbook.save(workbook_buffer)
+
+        presentation_buffer = BytesIO()
+        presentation = Presentation()
+        slide = presentation.slides.add_slide(presentation.slide_layouts[6])
+        slide.shapes.add_textbox(Inches(1), Inches(1), Inches(7), Inches(1)).text = "{nome} · {curso}"
+        presentation.save(presentation_buffer)
+
+        app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
+        app.radio[0].set_value("PowerPoint").run()
+        uploaders = app.get("file_uploader")
+        uploaders[0].set_value(("participantes.xlsx", workbook_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+        uploaders[1].set_value(("modelo.pptx", presentation_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.presentationml.presentation"))
+        app.run()
+        self.assertEqual(len(app.exception), 0)
+        app.button[0].click().run()
+
+        self.assertEqual(len(app.exception), 0)
+        saida = app.session_state["zip_certificados"]
+        with ZipFile(BytesIO(saida)) as pacote:
+            self.assertEqual(len(pacote.namelist()), 1)
+            arquivo = Presentation(BytesIO(pacote.read(pacote.namelist()[0])))
+            texto = " ".join(shape.text for shape in arquivo.slides[0].shapes if shape.has_text_frame)
+            self.assertEqual(texto, "Ana Souza · Primeiros Socorros")
+        self.assertEqual(app.session_state["historico_emissoes"][0]["formato"], "PowerPoint")
+
+    def test_interface_emite_pdf_com_qr_assinado_quando_segredo_esta_configurado(self):
+        workbook_buffer = BytesIO()
+        workbook = Workbook()
+        workbook.active.append(["nome"])
+        workbook.active.append(["Ana Souza"])
+        workbook.save(workbook_buffer)
+
+        pdf_buffer = BytesIO()
+        documento = canvas.Canvas(pdf_buffer, pagesize=(800, 500))
+        documento.drawCentredString(400, 450, "CERTIFICADO")
+        documento.showPage()
+        documento.save()
+
+        with patch.dict(os.environ, {"CERTIFICA_QR_SECRET": "a" * 64}):
+            app = AppTest.from_file(str(ROOT_DIR / "app.py"), default_timeout=30).run()
+            self.assertTrue(app.checkbox[0].value)
+            uploaders = app.get("file_uploader")
+            uploaders[0].set_value(("participantes.xlsx", workbook_buffer.getvalue(), "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+            uploaders[1].set_value(("modelo.pdf", pdf_buffer.getvalue(), "application/pdf"))
+            app.run()
+            app.button[0].click().run()
+
+        self.assertEqual(len(app.exception), 0)
+        pdf = PdfReader(BytesIO(app.session_state["pdf_unico"]))
+        self.assertEqual(len(pdf.pages[0].images), 1)
 
 
 class NomeSeguroTests(unittest.TestCase):
